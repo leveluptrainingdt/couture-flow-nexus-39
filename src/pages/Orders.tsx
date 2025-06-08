@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -104,6 +103,12 @@ const Orders = () => {
         totalAmount,
         status: 'new' as const,
         createdAt: serverTimestamp(),
+        measurements: {
+          chest: formData.measurements.chest || '',
+          waist: formData.measurements.waist || '',
+          length: formData.measurements.length || '',
+          shoulder: formData.measurements.shoulder || ''
+        }
       };
 
       if (editingOrder) {
@@ -160,11 +165,11 @@ const Orders = () => {
       orderItems: order.orderItems,
       deliveryDate: order.deliveryDate,
       notes: order.notes,
-      measurements: order.measurements || {
-        chest: '',
-        waist: '',
-        length: '',
-        shoulder: ''
+      measurements: {
+        chest: order.measurements?.chest || '',
+        waist: order.measurements?.waist || '',
+        length: order.measurements?.length || '',
+        shoulder: order.measurements?.shoulder || ''
       }
     });
     setIsDialogOpen(true);

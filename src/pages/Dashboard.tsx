@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +13,38 @@ import {
 } from 'lucide-react';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+
+interface Order {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  orderItems: Array<{
+    itemName: string;
+    quantity: number;
+    price: number;
+  }>;
+  totalAmount: number;
+  status: 'new' | 'in-progress' | 'completed' | 'delivered';
+  deliveryDate: string;
+  notes?: string;
+  createdAt: any;
+  measurements?: {
+    chest?: string;
+    waist?: string;
+    length?: string;
+    shoulder?: string;
+  };
+}
+
+interface InventoryItem {
+  id: string;
+  name: string;
+  quantity: number;
+  minStock?: number;
+  price: number;
+  category?: string;
+}
 
 interface DashboardStats {
   totalOrders: number;
@@ -34,7 +65,7 @@ const Dashboard = () => {
     todayAppointments: 0,
     activeStaff: 0
   });
-  const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -42,7 +73,10 @@ const Dashboard = () => {
       try {
         // Fetch orders
         const ordersSnapshot = await getDocs(collection(db, 'orders'));
-        const orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const orders: Order[] = ordersSnapshot.docs.map(doc => ({ 
+          id: doc.id, 
+          ...doc.data() 
+        } as Order));
         
         // Fetch recent orders
         const recentOrdersQuery = query(
@@ -51,14 +85,17 @@ const Dashboard = () => {
           limit(5)
         );
         const recentOrdersSnapshot = await getDocs(recentOrdersQuery);
-        const recentOrdersData = recentOrdersSnapshot.docs.map(doc => ({ 
+        const recentOrdersData: Order[] = recentOrdersSnapshot.docs.map(doc => ({ 
           id: doc.id, 
           ...doc.data() 
-        }));
+        } as Order));
 
         // Fetch inventory
         const inventorySnapshot = await getDocs(collection(db, 'inventory'));
-        const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const inventory: InventoryItem[] = inventorySnapshot.docs.map(doc => ({ 
+          id: doc.id, 
+          ...doc.data() 
+        } as InventoryItem));
 
         // Calculate stats
         const totalOrders = orders.length;
