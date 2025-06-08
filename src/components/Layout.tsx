@@ -81,7 +81,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </Button>
         </div>
 
-        <nav className="mt-8 px-4">
+        <nav className="mt-8 px-4 pb-20">
           <ul className="space-y-2">
             {filteredNavigation.map((item) => {
               const isActive = location.pathname === item.href;
@@ -107,7 +107,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         <div className="absolute bottom-4 left-4 right-4">
           <div className="bg-white/10 rounded-lg p-4 mb-4">
-            <div className="text-white/90 text-sm font-medium">{userData?.name}</div>
+            <div className="text-white/90 text-sm font-medium truncate">{userData?.name}</div>
             <div className="text-white/60 text-xs capitalize">{userData?.role}</div>
           </div>
           <Button
@@ -124,7 +124,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Main content */}
       <div className="lg:ml-64">
         {/* Mobile header */}
-        <div className="lg:hidden bg-white shadow-sm border-b px-4 py-3">
+        <div className="lg:hidden bg-white shadow-sm border-b px-4 py-3 relative z-30">
           <div className="flex items-center justify-between">
             <Button
               variant="ghost"
@@ -135,13 +135,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </Button>
             <div className="flex items-center space-x-2">
               <Crown className="h-6 w-6 text-purple-600" />
-              <span className="font-bold text-gray-800">Swetha's Couture</span>
+              <span className="font-bold text-gray-800 text-sm sm:text-base">Swetha's Couture</span>
             </div>
           </div>
         </div>
 
         {/* Page content */}
-        <main className="p-6">
+        <main className="p-4 sm:p-6 min-h-screen">
           {children}
         </main>
       </div>
