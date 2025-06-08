@@ -6,13 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Scissors, Crown } from 'lucide-react';
+import { Scissors, Crown, UserPlus } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { user, login } = useAuth();
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const { user, login, createAdminUser } = useAuth();
 
   if (user) {
     return <Navigate to="/dashboard" replace />;
@@ -37,6 +38,17 @@ const Login = () => {
     } else {
       setEmail('staf@gmail.com');
       setPassword('staf@gmail.com');
+    }
+  };
+
+  const handleCreateAdmin = async () => {
+    setCreatingAdmin(true);
+    try {
+      await createAdminUser();
+    } catch (error) {
+      console.error('Error creating admin:', error);
+    } finally {
+      setCreatingAdmin(false);
     }
   };
 
@@ -109,6 +121,21 @@ const Login = () => {
                 Staff
               </Button>
             </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <Button
+              onClick={handleCreateAdmin}
+              variant="outline"
+              className="w-full border-orange-200 text-orange-600 hover:bg-orange-50 transition-all duration-200"
+              disabled={creatingAdmin}
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              {creatingAdmin ? 'Creating Admin...' : 'Create Admin User'}
+            </Button>
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              Click this if admin login fails
+            </p>
           </div>
         </CardContent>
       </Card>
