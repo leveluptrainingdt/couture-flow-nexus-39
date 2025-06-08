@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -8,10 +7,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Users, UserCheck, UserX, Upload, Camera, DollarSign, Calendar } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Plus, Users, Clock, DollarSign, Phone, Mail, Calendar, User, CheckCircle, XCircle } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
+
+interface AttendanceRecord {
+  date: string;
+  status: 'present' | 'absent' | 'late' | 'half-day';
+  notes?: string;
+}
 
 interface StaffMember {
   id: string;
@@ -20,25 +26,15 @@ interface StaffMember {
   phone: string;
   role: 'staff' | 'admin';
   position: string;
-  department: string;
-  joiningDate: string;
   salary: number;
+  joinDate: string;
   status: 'active' | 'inactive' | 'on-leave';
   address?: string;
   emergencyContact?: string;
-  skills: string[];
-  profileImage?: string;
+  notes?: string;
   attendanceRecords: AttendanceRecord[];
   createdAt: any;
   updatedAt: any;
-}
-
-interface AttendanceRecord {
-  date: string;
-  checkIn: string;
-  checkOut?: string;
-  status: 'present' | 'absent' | 'late' | 'half-day';
-  imageUrl?: string;
 }
 
 const Staff = () => {
@@ -46,48 +42,23 @@ const Staff = () => {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isAttendanceDialogOpen, setIsAttendanceDialogOpen] = useState(false);
-  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
-  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [editingMember, setEditingMember] = useState<StaffMember | null>(null);
+  const [selectedMember, setSelectedMember] = useState<StaffMember | null>(null);
+  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
 
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
-    role: 'staff' as const,
+    role: 'staff' as 'staff' | 'admin',
     position: '',
-    department: '',
-    joiningDate: '',
     salary: 0,
-    status: 'active' as const,
+    joinDate: '',
+    status: 'active' as 'active' | 'inactive' | 'on-leave',
     address: '',
     emergencyContact: '',
-    skills: ''
+    notes: ''
   });
-
-  const departments = [
-    'Tailoring',
-    'Design',
-    'Embroidery',
-    'Quality Control',
-    'Customer Service',
-    'Administration',
-    'Management'
-  ];
-
-  const positions = [
-    'Junior Tailor',
-    'Senior Tailor',
-    'Master Tailor',
-    'Designer',
-    'Pattern Maker',
-    'Embroidery Specialist',
-    'Quality Inspector',
-    'Store Manager',
-    'Customer Relations',
-    'Administrator'
-  ];
 
   useEffect(() => {
     if (userData?.role === 'admin') {
@@ -101,13 +72,12 @@ const Staff = () => {
     try {
       const staffQuery = query(
         collection(db, 'staff'),
-        orderBy('name', 'asc')
+        orderBy('createdAt', 'desc')
       );
       const staffSnapshot = await getDocs(staffQuery);
       const staffData = staffSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        skills: doc.data().skills || [],
         attendanceRecords: doc.data().attendanceRecords || []
       })) as StaffMember[];
       
@@ -116,7 +86,7 @@ const Staff = () => {
       console.error('Error fetching staff:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch staff data",
+        description: "Failed to fetch staff members",
         variant: "destructive",
       });
     } finally {
@@ -129,14 +99,13 @@ const Staff = () => {
     try {
       const staffData = {
         ...formData,
-        skills: formData.skills.split(',').map(skill => skill.trim()).filter(skill => skill),
         attendanceRecords: [],
         updatedAt: serverTimestamp(),
-        ...(editingStaff ? {} : { createdAt: serverTimestamp() })
+        ...(editingMember ? {} : { createdAt: serverTimestamp() })
       };
 
-      if (editingStaff) {
-        await updateDoc(doc(db, 'staff', editingStaff.id), staffData);
+      if (editingMember) {
+        await updateDoc(doc(db, 'staff', editingMember.id), staffData);
         toast({
           title: "Success",
           description: "Staff member updated successfully",
@@ -150,7 +119,7 @@ const Staff = () => {
       }
 
       setIsDialogOpen(false);
-      setEditingStaff(null);
+      setEditingMember(null);
       resetForm();
       fetchStaff();
     } catch (error) {
@@ -170,94 +139,86 @@ const Staff = () => {
       phone: '',
       role: 'staff',
       position: '',
-      department: '',
-      joiningDate: '',
       salary: 0,
+      joinDate: '',
       status: 'active',
       address: '',
       emergencyContact: '',
-      skills: ''
+      notes: ''
     });
   };
 
-  const handleEdit = (staffMember: StaffMember) => {
-    setEditingStaff(staffMember);
+  const handleEdit = (member: StaffMember) => {
+    setEditingMember(member);
     setFormData({
-      name: staffMember.name,
-      email: staffMember.email,
-      phone: staffMember.phone,
-      role: staffMember.role,
-      position: staffMember.position,
-      department: staffMember.department,
-      joiningDate: staffMember.joiningDate,
-      salary: staffMember.salary,
-      status: staffMember.status,
-      address: staffMember.address || '',
-      emergencyContact: staffMember.emergencyContact || '',
-      skills: staffMember.skills.join(', ')
+      name: member.name,
+      email: member.email,
+      phone: member.phone,
+      role: member.role,
+      position: member.position,
+      salary: member.salary,
+      joinDate: member.joinDate,
+      status: member.status,
+      address: member.address || '',
+      emergencyContact: member.emergencyContact || '',
+      notes: member.notes || ''
     });
     setIsDialogOpen(true);
   };
 
-  const markAttendance = async (staffId: string, status: AttendanceRecord['status'], imageFile?: File) => {
+  const updateStatus = async (memberId: string, newStatus: StaffMember['status']) => {
     try {
-      let imageUrl = '';
-      
-      if (imageFile) {
-        setUploadingImage(true);
-        const formData = new FormData();
-        formData.append('file', imageFile);
-        formData.append('upload_preset', 'swetha');
+      await updateDoc(doc(db, 'staff', memberId), {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+      toast({
+        title: "Success",
+        description: "Staff status updated",
+      });
+      fetchStaff();
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update status",
+        variant: "destructive",
+      });
+    }
+  };
 
-        const response = await fetch('https://api.cloudinary.com/v1_1/dvmrhs2ek/image/upload', {
-          method: 'POST',
-          body: formData
-        });
+  const markAttendance = async (memberId: string, status: AttendanceRecord['status'], notes?: string) => {
+    try {
+      const member = staff.find(m => m.id === memberId);
+      if (!member) return;
 
-        const data = await response.json();
-        if (data.secure_url) {
-          imageUrl = data.secure_url;
-        }
-        setUploadingImage(false);
+      const newRecord: AttendanceRecord = {
+        date: attendanceDate,
+        status,
+        notes: notes || ''
+      };
+
+      const existingRecordIndex = member.attendanceRecords.findIndex(
+        record => record.date === attendanceDate
+      );
+
+      let updatedRecords = [...member.attendanceRecords];
+      if (existingRecordIndex >= 0) {
+        updatedRecords[existingRecordIndex] = newRecord;
+      } else {
+        updatedRecords.push(newRecord);
       }
 
-      const today = new Date().toISOString().split('T')[0];
-      const currentTime = new Date().toLocaleTimeString('en-US', { hour12: false });
+      await updateDoc(doc(db, 'staff', memberId), {
+        attendanceRecords: updatedRecords,
+        updatedAt: serverTimestamp()
+      });
 
-      const staffMember = staff.find(s => s.id === staffId);
-      if (staffMember) {
-        const existingRecord = staffMember.attendanceRecords.find(record => record.date === today);
-        
-        let updatedRecords;
-        if (existingRecord) {
-          updatedRecords = staffMember.attendanceRecords.map(record =>
-            record.date === today
-              ? { ...record, checkOut: currentTime, status, imageUrl }
-              : record
-          );
-        } else {
-          const newRecord: AttendanceRecord = {
-            date: today,
-            checkIn: currentTime,
-            status,
-            imageUrl
-          };
-          updatedRecords = [...staffMember.attendanceRecords, newRecord];
-        }
-
-        await updateDoc(doc(db, 'staff', staffId), {
-          attendanceRecords: updatedRecords,
-          updatedAt: serverTimestamp()
-        });
-
-        toast({
-          title: "Success",
-          description: "Attendance marked successfully",
-        });
-        
-        fetchStaff();
-        setIsAttendanceDialogOpen(false);
-      }
+      toast({
+        title: "Success",
+        description: "Attendance marked successfully",
+      });
+      fetchStaff();
     } catch (error) {
       console.error('Error marking attendance:', error);
       toast({
@@ -265,30 +226,7 @@ const Staff = () => {
         description: "Failed to mark attendance",
         variant: "destructive",
       });
-    } finally {
-      setUploadingImage(false);
     }
-  };
-
-  const calculateMonthlySalary = (staffMember: StaffMember) => {
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
-    
-    const monthlyRecords = staffMember.attendanceRecords.filter(record => {
-      const recordDate = new Date(record.date);
-      return recordDate.getMonth() === currentMonth && recordDate.getFullYear() === currentYear;
-    });
-
-    const presentDays = monthlyRecords.filter(record => 
-      record.status === 'present' || record.status === 'late'
-    ).length;
-    
-    const halfDays = monthlyRecords.filter(record => record.status === 'half-day').length;
-    
-    const totalDays = presentDays + (halfDays * 0.5);
-    const dailyRate = staffMember.salary / 30; // Assuming 30 days per month
-    
-    return Math.round(totalDays * dailyRate);
   };
 
   const getStatusColor = (status: StaffMember['status']) => {
@@ -300,6 +238,33 @@ const Staff = () => {
     }
   };
 
+  const getRoleColor = (role: StaffMember['role']) => {
+    switch (role) {
+      case 'admin': return 'bg-purple-100 text-purple-700';
+      case 'staff': return 'bg-blue-100 text-blue-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getAttendanceStats = (member: StaffMember) => {
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    
+    const monthlyRecords = member.attendanceRecords.filter(record => {
+      const recordDate = new Date(record.date);
+      return recordDate.getMonth() === currentMonth && recordDate.getFullYear() === currentYear;
+    });
+
+    const presentDays = monthlyRecords.filter(record => 
+      record.status === 'present' || record.status === 'late'
+    ).length;
+
+    const totalDays = monthlyRecords.length;
+    const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 0;
+
+    return { presentDays, totalDays, attendancePercentage };
+  };
+
   if (userData?.role !== 'admin') {
     return (
       <div className="space-y-6">
@@ -308,7 +273,7 @@ const Staff = () => {
             <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Access Restricted</h3>
             <p className="text-gray-600">
-              Only administrators can access staff management.
+              Only administrators can manage staff members.
             </p>
           </CardContent>
         </Card>
@@ -342,8 +307,8 @@ const Staff = () => {
     );
   }
 
-  const activeStaff = staff.filter(s => s.status === 'active');
-  const totalSalaryBudget = staff.reduce((sum, s) => sum + s.salary, 0);
+  const activeStaff = staff.filter(member => member.status === 'active');
+  const totalSalary = staff.reduce((sum, member) => sum + member.salary, 0);
 
   return (
     <div className="space-y-6">
@@ -351,244 +316,174 @@ const Staff = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Staff Management</h1>
-          <p className="text-gray-600">Manage team members and attendance</p>
+          <p className="text-gray-600">Manage team members, attendance, and payroll</p>
         </div>
-        <div className="flex space-x-3">
-          <Dialog open={isAttendanceDialogOpen} onOpenChange={setIsAttendanceDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <UserCheck className="h-4 w-4 mr-2" />
-                Mark Attendance
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Mark Attendance</DialogTitle>
-                <DialogDescription>
-                  Select staff member and mark their attendance.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                {staff.map(staffMember => (
-                  <div key={staffMember.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">{staffMember.name}</div>
-                      <div className="text-sm text-gray-500">{staffMember.position}</div>
-                    </div>
-                    <div className="flex space-x-2">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="user"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) markAttendance(staffMember.id, 'present', file);
-                        }}
-                        style={{ display: 'none' }}
-                        id={`attendance-${staffMember.id}`}
-                      />
-                      <Button
-                        size="sm"
-                        onClick={() => document.getElementById(`attendance-${staffMember.id}`)?.click()}
-                        disabled={uploadingImage}
-                      >
-                        <Camera className="h-3 w-3 mr-1" />
-                        Check In
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button 
+              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              onClick={() => {
+                setEditingMember(null);
+                resetForm();
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Staff Member
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {editingMember ? 'Edit Staff Member' : 'Add New Staff Member'}
+              </DialogTitle>
+              <DialogDescription>
+                Fill in the staff member details below.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    placeholder="Enter full name"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="position">Position</Label>
+                  <Input
+                    id="position"
+                    value={formData.position}
+                    onChange={(e) => setFormData({...formData, position: e.target.value})}
+                    placeholder="Job position"
+                    required
+                  />
+                </div>
               </div>
-            </DialogContent>
-          </Dialog>
-          
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button 
-                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                onClick={() => {
-                  setEditingStaff(null);
-                  resetForm();
-                }}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Staff Member
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingStaff ? 'Edit Staff Member' : 'Add New Staff Member'}
-                </DialogTitle>
-                <DialogDescription>
-                  Fill in the staff member details below.
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="name">Full Name</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      placeholder="Enter full name"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      placeholder="Email address"
-                      required
-                    />
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="phone">Phone</Label>
-                    <Input
-                      id="phone"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                      placeholder="Phone number"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="role">Role</Label>
-                    <select
-                      id="role"
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      value={formData.role}
-                      onChange={(e) => setFormData({...formData, role: e.target.value as 'staff' | 'admin'})}
-                      required
-                    >
-                      <option value="staff">Staff</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="position">Position</Label>
-                    <select
-                      id="position"
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      value={formData.position}
-                      onChange={(e) => setFormData({...formData, position: e.target.value})}
-                      required
-                    >
-                      <option value="">Select position</option>
-                      {positions.map(pos => (
-                        <option key={pos} value={pos}>{pos}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor="department">Department</Label>
-                    <select
-                      id="department"
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      value={formData.department}
-                      onChange={(e) => setFormData({...formData, department: e.target.value})}
-                      required
-                    >
-                      <option value="">Select department</option>
-                      {departments.map(dept => (
-                        <option key={dept} value={dept}>{dept}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="joiningDate">Joining Date</Label>
-                    <Input
-                      id="joiningDate"
-                      type="date"
-                      value={formData.joiningDate}
-                      onChange={(e) => setFormData({...formData, joiningDate: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="salary">Salary (₹)</Label>
-                    <Input
-                      id="salary"
-                      type="number"
-                      min="0"
-                      value={formData.salary}
-                      onChange={(e) => setFormData({...formData, salary: parseFloat(e.target.value) || 0})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="status">Status</Label>
-                    <select
-                      id="status"
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      value={formData.status}
-                      onChange={(e) => setFormData({...formData, status: e.target.value as StaffMember['status']})}
-                      required
-                    >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="on-leave">On Leave</option>
-                    </select>
-                  </div>
-                </div>
-
+              
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="skills">Skills (comma-separated)</Label>
+                  <Label htmlFor="email">Email</Label>
                   <Input
-                    id="skills"
-                    value={formData.skills}
-                    onChange={(e) => setFormData({...formData, skills: e.target.value})}
-                    placeholder="e.g., Tailoring, Embroidery, Pattern Making"
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    placeholder="Email address"
+                    required
                   />
                 </div>
-
                 <div>
-                  <Label htmlFor="address">Address</Label>
-                  <Textarea
-                    id="address"
-                    value={formData.address}
-                    onChange={(e) => setFormData({...formData, address: e.target.value})}
-                    placeholder="Full address"
-                    rows={2}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="emergencyContact">Emergency Contact</Label>
+                  <Label htmlFor="phone">Phone</Label>
                   <Input
-                    id="emergencyContact"
-                    value={formData.emergencyContact}
-                    onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})}
-                    placeholder="Emergency contact number"
+                    id="phone"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    placeholder="Phone number"
+                    required
                   />
                 </div>
+              </div>
 
-                <div className="flex justify-end space-x-3">
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="bg-gradient-to-r from-purple-600 to-blue-600">
-                    {editingStaff ? 'Update Staff Member' : 'Add Staff Member'}
-                  </Button>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="role">Role</Label>
+                  <select
+                    id="role"
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={formData.role}
+                    onChange={(e) => setFormData({...formData, role: e.target.value as 'staff' | 'admin'})}
+                    required
+                  >
+                    <option value="staff">Staff</option>
+                    <option value="admin">Admin</option>
+                  </select>
                 </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+                <div>
+                  <Label htmlFor="salary">Salary (₹)</Label>
+                  <Input
+                    id="salary"
+                    type="number"
+                    min="0"
+                    value={formData.salary}
+                    onChange={(e) => setFormData({...formData, salary: parseFloat(e.target.value) || 0})}
+                    placeholder="Monthly salary"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="status">Status</Label>
+                  <select
+                    id="status"
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={formData.status}
+                    onChange={(e) => setFormData({...formData, status: e.target.value as 'active' | 'inactive' | 'on-leave'})}
+                    required
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="on-leave">On Leave</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="joinDate">Join Date</Label>
+                <Input
+                  id="joinDate"
+                  type="date"
+                  value={formData.joinDate}
+                  onChange={(e) => setFormData({...formData, joinDate: e.target.value})}
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="address">Address</Label>
+                <Textarea
+                  id="address"
+                  value={formData.address}
+                  onChange={(e) => setFormData({...formData, address: e.target.value})}
+                  placeholder="Home address"
+                  rows={2}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="emergencyContact">Emergency Contact</Label>
+                <Input
+                  id="emergencyContact"
+                  value={formData.emergencyContact}
+                  onChange={(e) => setFormData({...formData, emergencyContact: e.target.value})}
+                  placeholder="Emergency contact number"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  value={formData.notes}
+                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                  placeholder="Additional notes"
+                  rows={2}
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-gradient-to-r from-purple-600 to-blue-600">
+                  {editingMember ? 'Update Member' : 'Add Member'}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Stats Cards */}
@@ -607,7 +502,7 @@ const Staff = () => {
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Active Staff</CardTitle>
-            <UserCheck className="h-5 w-5 text-green-600" />
+            <CheckCircle className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">{activeStaff.length}</div>
@@ -617,137 +512,196 @@ const Staff = () => {
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Monthly Budget</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Monthly Payroll</CardTitle>
             <DollarSign className="h-5 w-5 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">₹{totalSalaryBudget.toLocaleString()}</div>
-            <p className="text-xs text-gray-500">Total salaries</p>
+            <div className="text-2xl font-bold text-gray-900">₹{totalSalary.toLocaleString()}</div>
+            <p className="text-xs text-gray-500">Total monthly cost</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Present Today</CardTitle>
-            <Calendar className="h-5 w-5 text-orange-600" />
+            <CardTitle className="text-sm font-medium text-gray-600">On Leave</CardTitle>
+            <Clock className="h-5 w-5 text-orange-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">
-              {staff.filter(s => {
-                const today = new Date().toISOString().split('T')[0];
-                return s.attendanceRecords.some(record => 
-                  record.date === today && record.status === 'present'
-                );
-              }).length}
+              {staff.filter(member => member.status === 'on-leave').length}
             </div>
-            <p className="text-xs text-gray-500">Checked in today</p>
+            <p className="text-xs text-gray-500">Currently on leave</p>
           </CardContent>
         </Card>
       </div>
 
+      {/* Attendance Tracking */}
+      <Card className="border-0 shadow-md">
+        <CardHeader>
+          <CardTitle>Quick Attendance</CardTitle>
+          <CardDescription>Mark attendance for today</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-4 mb-4">
+            <Label>Date:</Label>
+            <Input
+              type="date"
+              value={attendanceDate}
+              onChange={(e) => setAttendanceDate(e.target.value)}
+              className="w-auto"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {activeStaff.map((member) => {
+              const todayRecord = member.attendanceRecords.find(
+                record => record.date === attendanceDate
+              );
+              return (
+                <div key={member.id} className="p-3 border rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium">{member.name}</span>
+                    {todayRecord && (
+                      <Badge className={
+                        todayRecord.status === 'present' ? 'bg-green-100 text-green-700' :
+                        todayRecord.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                        todayRecord.status === 'half-day' ? 'bg-blue-100 text-blue-700' :
+                        'bg-red-100 text-red-700'
+                      }>
+                        {todayRecord.status}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-green-600 hover:bg-green-50"
+                      onClick={() => markAttendance(member.id, 'present')}
+                    >
+                      Present
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-yellow-600 hover:bg-yellow-50"
+                      onClick={() => markAttendance(member.id, 'late')}
+                    >
+                      Late
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-blue-600 hover:bg-blue-50"
+                      onClick={() => markAttendance(member.id, 'half-day')}
+                    >
+                      Half Day
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 hover:bg-red-50"
+                      onClick={() => markAttendance(member.id, 'absent')}
+                    >
+                      Absent
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Staff Grid */}
       {staff.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {staff.map((staffMember) => (
-            <Card key={staffMember.id} className="hover:shadow-lg transition-all duration-300 border-0 shadow-md">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg">{staffMember.name}</CardTitle>
-                    <CardDescription>{staffMember.position} - {staffMember.department}</CardDescription>
-                  </div>
-                  <Badge className={getStatusColor(staffMember.status)} variant="outline">
-                    {staffMember.status.replace('-', ' ')}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Email:</span>
-                    <span className="font-medium text-xs">{staffMember.email}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Phone:</span>
-                    <span className="font-medium">{staffMember.phone}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Salary:</span>
-                    <span className="font-medium">₹{staffMember.salary.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Joining:</span>
-                    <span className="font-medium">{staffMember.joiningDate}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">This Month:</span>
-                    <span className="font-medium">₹{calculateMonthlySalary(staffMember).toLocaleString()}</span>
-                  </div>
-                </div>
-
-                {staffMember.skills.length > 0 && (
-                  <div>
-                    <div className="text-sm text-gray-600 mb-2">Skills:</div>
-                    <div className="flex flex-wrap gap-1">
-                      {staffMember.skills.map((skill, idx) => (
-                        <Badge key={idx} variant="outline" className="text-xs">
-                          {skill}
-                        </Badge>
-                      ))}
+          {staff.map((member) => {
+            const attendanceStats = getAttendanceStats(member);
+            return (
+              <Card key={member.id} className="hover:shadow-lg transition-all duration-300 border-0 shadow-md">
+                <CardHeader className="pb-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <CardTitle className="text-lg flex items-center space-x-2">
+                        <User className="h-5 w-5 text-purple-600" />
+                        <span>{member.name}</span>
+                      </CardTitle>
+                      <CardDescription>{member.position}</CardDescription>
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <Badge className={getStatusColor(member.status)} variant="outline">
+                        {member.status.replace('-', ' ')}
+                      </Badge>
+                      <Badge className={getRoleColor(member.role)} variant="outline">
+                        {member.role}
+                      </Badge>
                     </div>
                   </div>
-                )}
-
-                {/* Recent Attendance */}
-                <div>
-                  <div className="text-sm text-gray-600 mb-2">Recent Attendance:</div>
-                  <div className="flex space-x-1">
-                    {Array.from({ length: 7 }, (_, i) => {
-                      const date = new Date();
-                      date.setDate(date.getDate() - (6 - i));
-                      const dateStr = date.toISOString().split('T')[0];
-                      const record = staffMember.attendanceRecords.find(r => r.date === dateStr);
-                      
-                      return (
-                        <div
-                          key={i}
-                          className={`w-6 h-6 rounded text-xs flex items-center justify-center ${
-                            record?.status === 'present' ? 'bg-green-500 text-white' :
-                            record?.status === 'late' ? 'bg-yellow-500 text-white' :
-                            record?.status === 'half-day' ? 'bg-orange-500 text-white' :
-                            record?.status === 'absent' ? 'bg-red-500 text-white' :
-                            'bg-gray-200 text-gray-500'
-                          }`}
-                          title={`${date.toLocaleDateString()} - ${record?.status || 'no record'}`}
-                        >
-                          {date.getDate()}
-                        </div>
-                      );
-                    })}
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Salary:</span>
+                      <span className="font-medium">₹{member.salary.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Join Date:</span>
+                      <span className="font-medium">{member.joinDate}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">Attendance:</span>
+                      <span className="font-medium">{attendanceStats.attendancePercentage}%</span>
+                    </div>
+                    <div className="flex items-center space-x-1 text-sm text-gray-600">
+                      <Phone className="h-3 w-3" />
+                      <span>{member.phone}</span>
+                    </div>
+                    <div className="flex items-center space-x-1 text-sm text-gray-600">
+                      <Mail className="h-3 w-3" />
+                      <span>{member.email}</span>
+                    </div>
                   </div>
-                </div>
 
-                {/* Actions */}
-                <div className="flex space-x-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => handleEdit(staffMember)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => markAttendance(staffMember.id, 'present')}
-                  >
-                    Mark Present
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <div className="flex flex-wrap gap-2">
+                    {member.status === 'inactive' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-green-600 hover:bg-green-50"
+                        onClick={() => updateStatus(member.id, 'active')}
+                      >
+                        Activate
+                      </Button>
+                    )}
+                    {member.status === 'active' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-yellow-600 hover:bg-yellow-50"
+                        onClick={() => updateStatus(member.id, 'on-leave')}
+                      >
+                        Mark Leave
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEdit(member)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedMember(member)}
+                    >
+                      View Details
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <Card className="border-0 shadow-sm">
@@ -762,10 +716,101 @@ const Staff = () => {
               onClick={() => setIsDialogOpen(true)}
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add First Staff Member
+              Add First Member
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Member Details Dialog */}
+      {selectedMember && (
+        <Dialog open={!!selectedMember} onOpenChange={() => setSelectedMember(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{selectedMember.name} - Details</DialogTitle>
+              <DialogDescription>
+                Complete staff member information and attendance history
+              </DialogDescription>
+            </DialogHeader>
+            <Tabs defaultValue="info" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="info">Information</TabsTrigger>
+                <TabsTrigger value="attendance">Attendance</TabsTrigger>
+              </TabsList>
+              <TabsContent value="info" className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Position</Label>
+                    <p className="text-sm font-medium">{selectedMember.position}</p>
+                  </div>
+                  <div>
+                    <Label>Role</Label>
+                    <Badge className={getRoleColor(selectedMember.role)}>{selectedMember.role}</Badge>
+                  </div>
+                  <div>
+                    <Label>Email</Label>
+                    <p className="text-sm">{selectedMember.email}</p>
+                  </div>
+                  <div>
+                    <Label>Phone</Label>
+                    <p className="text-sm">{selectedMember.phone}</p>
+                  </div>
+                  <div>
+                    <Label>Salary</Label>
+                    <p className="text-sm font-medium">₹{selectedMember.salary.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <Label>Join Date</Label>
+                    <p className="text-sm">{selectedMember.joinDate}</p>
+                  </div>
+                </div>
+                {selectedMember.address && (
+                  <div>
+                    <Label>Address</Label>
+                    <p className="text-sm">{selectedMember.address}</p>
+                  </div>
+                )}
+                {selectedMember.emergencyContact && (
+                  <div>
+                    <Label>Emergency Contact</Label>
+                    <p className="text-sm">{selectedMember.emergencyContact}</p>
+                  </div>
+                )}
+                {selectedMember.notes && (
+                  <div>
+                    <Label>Notes</Label>
+                    <p className="text-sm">{selectedMember.notes}</p>
+                  </div>
+                )}
+              </TabsContent>
+              <TabsContent value="attendance" className="space-y-4">
+                <div className="max-h-60 overflow-y-auto">
+                  {selectedMember.attendanceRecords.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedMember.attendanceRecords
+                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                        .map((record, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                          <span className="text-sm">{record.date}</span>
+                          <Badge className={
+                            record.status === 'present' ? 'bg-green-100 text-green-700' :
+                            record.status === 'late' ? 'bg-yellow-100 text-yellow-700' :
+                            record.status === 'half-day' ? 'bg-blue-100 text-blue-700' :
+                            'bg-red-100 text-red-700'
+                          }>
+                            {record.status}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center">No attendance records found</p>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

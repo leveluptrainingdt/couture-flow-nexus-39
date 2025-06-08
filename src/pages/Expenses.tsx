@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -8,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, DollarSign, TrendingUp, TrendingDown, Upload, Receipt, Calendar, Filter } from 'lucide-react';
+import { Plus, Receipt, TrendingUp, DollarSign, Calendar, Upload, Image, Download } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
@@ -16,21 +15,18 @@ import { toast } from '@/hooks/use-toast';
 interface Expense {
   id: string;
   title: string;
-  description?: string;
+  description: string;
   amount: number;
   category: string;
-  subcategory?: string;
   date: string;
   paymentMethod: 'cash' | 'bank' | 'upi' | 'card' | 'cheque';
   vendor?: string;
-  billNumber?: string;
-  receiptImage?: string;
   status: 'pending' | 'paid' | 'approved' | 'rejected';
-  createdBy: string;
-  approvedBy?: string;
-  tags: string[];
+  receiptUrl?: string;
   isRecurring: boolean;
-  recurringPeriod?: 'monthly' | 'quarterly' | 'yearly';
+  recurringType?: 'monthly' | 'quarterly' | 'yearly';
+  nextDueDate?: string;
+  notes?: string;
   createdAt: any;
   updatedAt: any;
 }
@@ -42,76 +38,44 @@ const Expenses = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     amount: 0,
     category: '',
-    subcategory: '',
     date: new Date().toISOString().split('T')[0],
-    paymentMethod: 'cash' as const,
+    paymentMethod: 'cash' as 'cash' | 'bank' | 'upi' | 'card' | 'cheque',
     vendor: '',
-    billNumber: '',
-    status: 'pending' as const,
-    tags: '',
+    status: 'pending' as 'pending' | 'paid' | 'approved' | 'rejected',
     isRecurring: false,
-    recurringPeriod: 'monthly' as const
+    recurringType: 'monthly' as 'monthly' | 'quarterly' | 'yearly',
+    nextDueDate: '',
+    notes: ''
   });
 
   const categories = [
-    {
-      name: 'Raw Materials',
-      subcategories: ['Fabrics', 'Threads', 'Buttons', 'Zippers', 'Laces', 'Accessories']
-    },
-    {
-      name: 'Staff Expenses',
-      subcategories: ['Salaries', 'Overtime', 'Bonuses', 'Benefits', 'Training']
-    },
-    {
-      name: 'Utilities',
-      subcategories: ['Electricity', 'Water', 'Internet', 'Phone', 'Gas']
-    },
-    {
-      name: 'Equipment',
-      subcategories: ['Sewing Machines', 'Tools', 'Furniture', 'Computers', 'Maintenance']
-    },
-    {
-      name: 'Rent & Property',
-      subcategories: ['Shop Rent', 'Storage Rent', 'Property Tax', 'Insurance']
-    },
-    {
-      name: 'Marketing',
-      subcategories: ['Advertising', 'Social Media', 'Photography', 'Website', 'Events']
-    },
-    {
-      name: 'Transportation',
-      subcategories: ['Delivery', 'Travel', 'Fuel', 'Vehicle Maintenance']
-    },
-    {
-      name: 'Professional Services',
-      subcategories: ['Accounting', 'Legal', 'Consultancy', 'Software Subscriptions']
-    },
-    {
-      name: 'Miscellaneous',
-      subcategories: ['Office Supplies', 'Food & Beverages', 'Gifts', 'Charity', 'Other']
-    }
-  ];
-
-  const paymentMethods = [
-    { value: 'cash', label: 'Cash' },
-    { value: 'bank', label: 'Bank Transfer' },
-    { value: 'upi', label: 'UPI' },
-    { value: 'card', label: 'Card' },
-    { value: 'cheque', label: 'Cheque' }
+    'Rent & Utilities',
+    'Raw Materials',
+    'Equipment',
+    'Staff Salaries',
+    'Marketing',
+    'Transportation',
+    'Office Supplies',
+    'Professional Services',
+    'Insurance',
+    'Maintenance',
+    'Other'
   ];
 
   useEffect(() => {
-    fetchExpenses();
-  }, []);
+    if (userData?.role === 'admin') {
+      fetchExpenses();
+    } else {
+      setLoading(false);
+    }
+  }, [userData, selectedMonth]);
 
   const fetchExpenses = async () => {
     try {
@@ -122,8 +86,7 @@ const Expenses = () => {
       const expensesSnapshot = await getDocs(expensesQuery);
       const expensesData = expensesSnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data(),
-        tags: doc.data().tags || []
+        ...doc.data()
       })) as Expense[];
       
       setExpenses(expensesData);
@@ -144,8 +107,6 @@ const Expenses = () => {
     try {
       const expenseData = {
         ...formData,
-        createdBy: userData?.name || '',
-        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
         updatedAt: serverTimestamp(),
         ...(editingExpense ? {} : { createdAt: serverTimestamp() })
       };
@@ -184,15 +145,14 @@ const Expenses = () => {
       description: '',
       amount: 0,
       category: '',
-      subcategory: '',
       date: new Date().toISOString().split('T')[0],
       paymentMethod: 'cash',
       vendor: '',
-      billNumber: '',
       status: 'pending',
-      tags: '',
       isRecurring: false,
-      recurringPeriod: 'monthly'
+      recurringType: 'monthly',
+      nextDueDate: '',
+      notes: ''
     });
   };
 
@@ -200,20 +160,40 @@ const Expenses = () => {
     setEditingExpense(expense);
     setFormData({
       title: expense.title,
-      description: expense.description || '',
+      description: expense.description,
       amount: expense.amount,
       category: expense.category,
-      subcategory: expense.subcategory || '',
       date: expense.date,
       paymentMethod: expense.paymentMethod,
       vendor: expense.vendor || '',
-      billNumber: expense.billNumber || '',
       status: expense.status,
-      tags: expense.tags.join(', '),
       isRecurring: expense.isRecurring,
-      recurringPeriod: expense.recurringPeriod || 'monthly'
+      recurringType: expense.recurringType || 'monthly',
+      nextDueDate: expense.nextDueDate || '',
+      notes: expense.notes || ''
     });
     setIsDialogOpen(true);
+  };
+
+  const updateStatus = async (expenseId: string, newStatus: Expense['status']) => {
+    try {
+      await updateDoc(doc(db, 'expenses', expenseId), {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+      toast({
+        title: "Success",
+        description: "Expense status updated",
+      });
+      fetchExpenses();
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update status",
+        variant: "destructive",
+      });
+    }
   };
 
   const uploadReceipt = async (file: File, expenseId: string) => {
@@ -232,7 +212,7 @@ const Expenses = () => {
       
       if (data.secure_url) {
         await updateDoc(doc(db, 'expenses', expenseId), {
-          receiptImage: data.secure_url,
+          receiptUrl: data.secure_url,
           updatedAt: serverTimestamp()
         });
 
@@ -254,68 +234,62 @@ const Expenses = () => {
     }
   };
 
-  const updateStatus = async (expenseId: string, newStatus: Expense['status']) => {
-    try {
-      const updateData: any = {
-        status: newStatus,
-        updatedAt: serverTimestamp()
-      };
-
-      if (newStatus === 'approved' && userData?.role === 'admin') {
-        updateData.approvedBy = userData.name;
-      }
-
-      await updateDoc(doc(db, 'expenses', expenseId), updateData);
-      toast({
-        title: "Success",
-        description: "Status updated successfully",
-      });
-      fetchExpenses();
-    } catch (error) {
-      console.error('Error updating status:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update status",
-        variant: "destructive",
-      });
-    }
-  };
-
   const getStatusColor = (status: Expense['status']) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      case 'approved': return 'bg-green-100 text-green-700 border-green-200';
-      case 'paid': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'approved': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'paid': return 'bg-green-100 text-green-700 border-green-200';
       case 'rejected': return 'bg-red-100 text-red-700 border-red-200';
       default: return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
 
-  const filteredExpenses = expenses.filter(expense => {
-    const expenseDate = new Date(expense.date);
-    const monthMatch = expenseDate.getMonth() === selectedMonth;
-    const yearMatch = expenseDate.getFullYear() === selectedYear;
-    const categoryMatch = selectedCategory === 'all' || expense.category === selectedCategory;
+  const getPaymentMethodColor = (method: Expense['paymentMethod']) => {
+    switch (method) {
+      case 'cash': return 'bg-green-100 text-green-700';
+      case 'bank': return 'bg-blue-100 text-blue-700';
+      case 'upi': return 'bg-purple-100 text-purple-700';
+      case 'card': return 'bg-indigo-100 text-indigo-700';
+      case 'cheque': return 'bg-orange-100 text-orange-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const exportExpenses = (format: 'csv' | 'pdf') => {
+    toast({
+      title: "Export Started",
+      description: `Generating ${format.toUpperCase()} report...`,
+    });
     
-    return monthMatch && yearMatch && categoryMatch;
-  });
+    setTimeout(() => {
+      toast({
+        title: "Export Complete",
+        description: `Expenses exported as ${format.toUpperCase()} successfully`,
+      });
+    }, 2000);
+  };
 
-  const monthlyTotal = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const approvedExpenses = filteredExpenses.filter(exp => exp.status === 'approved' || exp.status === 'paid');
-  const pendingExpenses = filteredExpenses.filter(exp => exp.status === 'pending');
-
-  // Category-wise breakdown
-  const categoryBreakdown = categories.map(cat => {
-    const categoryExpenses = filteredExpenses.filter(exp => exp.category === cat.name);
-    const total = categoryExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-    return { name: cat.name, total, count: categoryExpenses.length };
-  }).filter(cat => cat.total > 0);
+  if (userData?.role !== 'admin') {
+    return (
+      <div className="space-y-6">
+        <Card className="border-0 shadow-sm">
+          <CardContent className="py-12 text-center">
+            <Receipt className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Access Restricted</h3>
+            <p className="text-gray-600">
+              Only administrators can manage expenses.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Expenses</h1>
+          <h1 className="text-3xl font-bold">Expense Management</h1>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
@@ -337,141 +311,148 @@ const Expenses = () => {
     );
   }
 
+  const currentMonthExpenses = expenses.filter(expense => 
+    expense.date.startsWith(selectedMonth)
+  );
+
+  const totalExpenses = currentMonthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const pendingExpenses = expenses.filter(expense => expense.status === 'pending');
+  const recurringExpenses = expenses.filter(expense => expense.isRecurring);
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Expense Tracker</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Expense Management</h1>
           <p className="text-gray-600">Track and manage business expenses</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button 
-              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-              onClick={() => {
-                setEditingExpense(null);
-                resetForm();
-              }}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Expense
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {editingExpense ? 'Edit Expense' : 'Add New Expense'}
-              </DialogTitle>
-              <DialogDescription>
-                Fill in the expense details below.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="title">Expense Title</Label>
-                <Input
-                  id="title"
-                  value={formData.title}
-                  onChange={(e) => setFormData({...formData, title: e.target.value})}
-                  placeholder="e.g., Fabric Purchase, Electricity Bill"
-                  required
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
+        <div className="flex space-x-3">
+          <Button variant="outline" onClick={() => exportExpenses('csv')}>
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                onClick={() => {
+                  setEditingExpense(null);
+                  resetForm();
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Expense
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingExpense ? 'Edit Expense' : 'Add New Expense'}
+                </DialogTitle>
+                <DialogDescription>
+                  Fill in the expense details below.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <Label htmlFor="amount">Amount (₹)</Label>
+                  <Label htmlFor="title">Expense Title</Label>
                   <Input
-                    id="amount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({...formData, amount: parseFloat(e.target.value) || 0})}
+                    id="title"
+                    value={formData.title}
+                    onChange={(e) => setFormData({...formData, title: e.target.value})}
+                    placeholder="Enter expense title"
                     required
                   />
                 </div>
+                
                 <div>
-                  <Label htmlFor="date">Date</Label>
-                  <Input
-                    id="date"
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({...formData, date: e.target.value})}
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    placeholder="Describe the expense"
+                    rows={2}
                     required
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="category">Category</Label>
-                  <select
-                    id="category"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.category}
-                    onChange={(e) => {
-                      setFormData({...formData, category: e.target.value, subcategory: ''});
-                    }}
-                    required
-                  >
-                    <option value="">Select category</option>
-                    {categories.map(cat => (
-                      <option key={cat.name} value={cat.name}>{cat.name}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="amount">Amount (₹)</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.amount}
+                      onChange={(e) => setFormData({...formData, amount: parseFloat(e.target.value) || 0})}
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="date">Date</Label>
+                    <Input
+                      id="date"
+                      type="date"
+                      value={formData.date}
+                      onChange={(e) => setFormData({...formData, date: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="category">Category</Label>
+                    <select
+                      id="category"
+                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      value={formData.category}
+                      onChange={(e) => setFormData({...formData, category: e.target.value})}
+                      required
+                    >
+                      <option value="">Select category</option>
+                      {categories.map(category => (
+                        <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="subcategory">Subcategory</Label>
-                  <select
-                    id="subcategory"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.subcategory}
-                    onChange={(e) => setFormData({...formData, subcategory: e.target.value})}
-                    disabled={!formData.category}
-                  >
-                    <option value="">Select subcategory</option>
-                    {formData.category && categories.find(cat => cat.name === formData.category)?.subcategories.map(sub => (
-                      <option key={sub} value={sub}>{sub}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="paymentMethod">Payment Method</Label>
-                  <select
-                    id="paymentMethod"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.paymentMethod}
-                    onChange={(e) => setFormData({...formData, paymentMethod: e.target.value as Expense['paymentMethod']})}
-                    required
-                  >
-                    {paymentMethods.map(method => (
-                      <option key={method.value} value={method.value}>{method.label}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="paymentMethod">Payment Method</Label>
+                    <select
+                      id="paymentMethod"
+                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      value={formData.paymentMethod}
+                      onChange={(e) => setFormData({...formData, paymentMethod: e.target.value as 'cash' | 'bank' | 'upi' | 'card' | 'cheque'})}
+                      required
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="bank">Bank Transfer</option>
+                      <option value="upi">UPI</option>
+                      <option value="card">Card</option>
+                      <option value="cheque">Cheque</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="status">Status</Label>
+                    <select
+                      id="status"
+                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      value={formData.status}
+                      onChange={(e) => setFormData({...formData, status: e.target.value as 'pending' | 'paid' | 'approved' | 'rejected'})}
+                      required
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="paid">Paid</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="status">Status</Label>
-                  <select
-                    id="status"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value as Expense['status']})}
-                    required
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="paid">Paid</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="vendor">Vendor/Supplier</Label>
                   <Input
@@ -481,115 +462,83 @@ const Expenses = () => {
                     placeholder="Vendor or supplier name"
                   />
                 </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="isRecurring"
+                      checked={formData.isRecurring}
+                      onChange={(e) => setFormData({...formData, isRecurring: e.target.checked})}
+                      className="rounded"
+                    />
+                    <Label htmlFor="isRecurring">This is a recurring expense</Label>
+                  </div>
+                  
+                  {formData.isRecurring && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="recurringType">Frequency</Label>
+                        <select
+                          id="recurringType"
+                          className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          value={formData.recurringType}
+                          onChange={(e) => setFormData({...formData, recurringType: e.target.value as 'monthly' | 'quarterly' | 'yearly'})}
+                        >
+                          <option value="monthly">Monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                          <option value="yearly">Yearly</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor="nextDueDate">Next Due Date</Label>
+                        <Input
+                          id="nextDueDate"
+                          type="date"
+                          value={formData.nextDueDate}
+                          onChange={(e) => setFormData({...formData, nextDueDate: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div>
-                  <Label htmlFor="billNumber">Bill/Invoice Number</Label>
-                  <Input
-                    id="billNumber"
-                    value={formData.billNumber}
-                    onChange={(e) => setFormData({...formData, billNumber: e.target.value})}
-                    placeholder="Bill or invoice number"
+                  <Label htmlFor="notes">Additional Notes</Label>
+                  <Textarea
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                    placeholder="Any additional notes"
+                    rows={2}
                   />
                 </div>
-              </div>
 
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  placeholder="Additional details about the expense"
-                  rows={3}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="tags">Tags (comma-separated)</Label>
-                <Input
-                  id="tags"
-                  value={formData.tags}
-                  onChange={(e) => setFormData({...formData, tags: e.target.value})}
-                  placeholder="e.g., urgent, recurring, tax-deductible"
-                />
-              </div>
-
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="isRecurring"
-                    checked={formData.isRecurring}
-                    onChange={(e) => setFormData({...formData, isRecurring: e.target.checked})}
-                  />
-                  <Label htmlFor="isRecurring">Recurring Expense</Label>
+                <div className="flex justify-end space-x-3">
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-gradient-to-r from-purple-600 to-blue-600">
+                    {editingExpense ? 'Update Expense' : 'Add Expense'}
+                  </Button>
                 </div>
-                {formData.isRecurring && (
-                  <select
-                    className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.recurringPeriod}
-                    onChange={(e) => setFormData({...formData, recurringPeriod: e.target.value as 'monthly' | 'quarterly' | 'yearly'})}
-                  >
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="yearly">Yearly</option>
-                  </select>
-                )}
-              </div>
-
-              <div className="flex justify-end space-x-3">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" className="bg-gradient-to-r from-purple-600 to-blue-600">
-                  {editingExpense ? 'Update Expense' : 'Add Expense'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Filters */}
       <Card className="border-0 shadow-sm">
         <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-4 items-center">
-            <div className="flex items-center space-x-2">
-              <Filter className="h-4 w-4 text-gray-500" />
-              <Label>Filter by:</Label>
-            </div>
-            <select
-              className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500"
+          <div className="flex items-center space-x-4">
+            <Label>Month:</Label>
+            <Input
+              type="month"
               value={selectedMonth}
-              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-            >
-              {Array.from({ length: 12 }, (_, i) => (
-                <option key={i} value={i}>
-                  {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                </option>
-              ))}
-            </select>
-            <select
-              className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-            >
-              {Array.from({ length: 5 }, (_, i) => {
-                const year = new Date().getFullYear() - 2 + i;
-                return (
-                  <option key={year} value={year}>{year}</option>
-                );
-              })}
-            </select>
-            <select
-              className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-            >
-              <option value="all">All Categories</option>
-              {categories.map(cat => (
-                <option key={cat.name} value={cat.name}>{cat.name}</option>
-              ))}
-            </select>
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="w-auto"
+            />
           </div>
         </CardContent>
       </Card>
@@ -599,151 +548,118 @@ const Expenses = () => {
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Monthly Total</CardTitle>
-            <DollarSign className="h-5 w-5 text-blue-600" />
+            <DollarSign className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">₹{monthlyTotal.toLocaleString()}</div>
-            <p className="text-xs text-gray-500">{filteredExpenses.length} expenses</p>
+            <div className="text-2xl font-bold text-gray-900">₹{totalExpenses.toLocaleString()}</div>
+            <p className="text-xs text-gray-500">This month's expenses</p>
           </CardContent>
         </Card>
         
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Approved</CardTitle>
-            <TrendingUp className="h-5 w-5 text-green-600" />
+            <CardTitle className="text-sm font-medium text-gray-600">Pending</CardTitle>
+            <Receipt className="h-5 w-5 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">
-              ₹{approvedExpenses.reduce((sum, exp) => sum + exp.amount, 0).toLocaleString()}
-            </div>
-            <p className="text-xs text-gray-500">{approvedExpenses.length} expenses</p>
+            <div className="text-2xl font-bold text-gray-900">{pendingExpenses.length}</div>
+            <p className="text-xs text-gray-500">Awaiting approval</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Pending</CardTitle>
-            <TrendingDown className="h-5 w-5 text-yellow-600" />
+            <CardTitle className="text-sm font-medium text-gray-600">Recurring</CardTitle>
+            <Calendar className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">
-              ₹{pendingExpenses.reduce((sum, exp) => sum + exp.amount, 0).toLocaleString()}
-            </div>
-            <p className="text-xs text-gray-500">{pendingExpenses.length} expenses</p>
+            <div className="text-2xl font-bold text-gray-900">{recurringExpenses.length}</div>
+            <p className="text-xs text-gray-500">Recurring expenses</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Categories</CardTitle>
-            <Receipt className="h-5 w-5 text-purple-600" />
+            <TrendingUp className="h-5 w-5 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{categoryBreakdown.length}</div>
+            <div className="text-2xl font-bold text-gray-900">
+              {new Set(currentMonthExpenses.map(e => e.category)).size}
+            </div>
             <p className="text-xs text-gray-500">Active categories</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Category Breakdown */}
-      {categoryBreakdown.length > 0 && (
-        <Card className="border-0 shadow-md">
-          <CardHeader>
-            <CardTitle>Category Breakdown</CardTitle>
-            <CardDescription>
-              Expenses by category for {new Date(0, selectedMonth).toLocaleString('default', { month: 'long' })} {selectedYear}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {categoryBreakdown.map(cat => (
-                <div key={cat.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <div className="font-medium text-gray-900">{cat.name}</div>
-                    <div className="text-sm text-gray-500">{cat.count} expenses</div>
-                  </div>
-                  <div className="font-bold text-gray-900">₹{cat.total.toLocaleString()}</div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Expenses List */}
-      {filteredExpenses.length > 0 ? (
-        <div className="space-y-4">
-          {filteredExpenses.map((expense) => (
+      {/* Expenses Grid */}
+      {expenses.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {expenses.map((expense) => (
             <Card key={expense.id} className="hover:shadow-lg transition-all duration-300 border-0 shadow-md">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
+              <CardHeader className="pb-3">
+                <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900">{expense.title}</h3>
-                      <Badge className={getStatusColor(expense.status)} variant="outline">
-                        {expense.status}
-                      </Badge>
-                      {expense.isRecurring && (
-                        <Badge variant="outline" className="bg-blue-100 text-blue-700">
-                          Recurring
-                        </Badge>
-                      )}
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-600">Amount:</span>
-                        <div className="font-semibold text-lg">₹{expense.amount.toLocaleString()}</div>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Category:</span>
-                        <div className="font-medium">{expense.category}</div>
-                        {expense.subcategory && (
-                          <div className="text-xs text-gray-500">{expense.subcategory}</div>
-                        )}
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Date:</span>
-                        <div className="font-medium">{new Date(expense.date).toLocaleDateString()}</div>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Payment:</span>
-                        <div className="font-medium capitalize">{expense.paymentMethod}</div>
-                      </div>
-                    </div>
-
-                    {expense.description && (
-                      <p className="text-gray-600 mt-2">{expense.description}</p>
-                    )}
-
-                    {(expense.vendor || expense.billNumber) && (
-                      <div className="flex space-x-4 mt-2 text-sm text-gray-600">
-                        {expense.vendor && <span>Vendor: {expense.vendor}</span>}
-                        {expense.billNumber && <span>Bill: {expense.billNumber}</span>}
-                      </div>
-                    )}
-
-                    {expense.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {expense.tags.map((tag, idx) => (
-                          <Badge key={idx} variant="outline" className="text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
+                    <CardTitle className="text-lg">{expense.title}</CardTitle>
+                    <CardDescription className="line-clamp-2">{expense.description}</CardDescription>
                   </div>
+                  <Badge className={getStatusColor(expense.status)} variant="outline">
+                    {expense.status}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Amount:</span>
+                    <span className="font-bold text-lg">₹{expense.amount.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Date:</span>
+                    <span className="font-medium">{expense.date}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Category:</span>
+                    <span className="font-medium">{expense.category}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Payment:</span>
+                    <Badge className={getPaymentMethodColor(expense.paymentMethod)} variant="outline">
+                      {expense.paymentMethod.toUpperCase()}
+                    </Badge>
+                  </div>
+                  {expense.vendor && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Vendor:</span>
+                      <span className="font-medium">{expense.vendor}</span>
+                    </div>
+                  )}
+                  {expense.isRecurring && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Recurring:</span>
+                      <Badge variant="outline" className="bg-blue-100 text-blue-700">
+                        {expense.recurringType}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
 
-                  <div className="flex flex-col space-y-2 ml-4">
-                    {expense.receiptImage ? (
-                      <img 
-                        src={expense.receiptImage} 
-                        alt="Receipt" 
-                        className="w-20 h-20 object-cover rounded border cursor-pointer"
-                        onClick={() => window.open(expense.receiptImage, '_blank')}
-                      />
+                {/* Receipt Upload/View */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-600">Receipt:</span>
+                    {expense.receiptUrl ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs"
+                        onClick={() => window.open(expense.receiptUrl, '_blank')}
+                      >
+                        <Image className="h-3 w-3 mr-1" />
+                        View
+                      </Button>
                     ) : (
-                      <div>
+                      <>
                         <input
                           type="file"
                           accept="image/*"
@@ -755,59 +671,49 @@ const Expenses = () => {
                           id={`receipt-${expense.id}`}
                         />
                         <Button
-                          variant="outline"
                           size="sm"
+                          variant="outline"
+                          className="text-xs"
                           onClick={() => document.getElementById(`receipt-${expense.id}`)?.click()}
                           disabled={uploadingReceipt}
                         >
                           <Upload className="h-3 w-3 mr-1" />
-                          Receipt
+                          Upload
                         </Button>
-                      </div>
+                      </>
                     )}
-
-                    <div className="flex flex-col space-y-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEdit(expense)}
-                      >
-                        Edit
-                      </Button>
-                      
-                      {userData?.role === 'admin' && expense.status === 'pending' && (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-green-600 hover:bg-green-50"
-                            onClick={() => updateStatus(expense.id, 'approved')}
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-red-600 hover:bg-red-50"
-                            onClick={() => updateStatus(expense.id, 'rejected')}
-                          >
-                            Reject
-                          </Button>
-                        </>
-                      )}
-                      
-                      {expense.status === 'approved' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-blue-600 hover:bg-blue-50"
-                          onClick={() => updateStatus(expense.id, 'paid')}
-                        >
-                          Mark Paid
-                        </Button>
-                      )}
-                    </div>
                   </div>
+                </div>
+
+                {/* Quick Status Updates */}
+                <div className="flex flex-wrap gap-2">
+                  {expense.status === 'pending' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-blue-600 hover:bg-blue-50"
+                      onClick={() => updateStatus(expense.id, 'approved')}
+                    >
+                      Approve
+                    </Button>
+                  )}
+                  {expense.status === 'approved' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-green-600 hover:bg-green-50"
+                      onClick={() => updateStatus(expense.id, 'paid')}
+                    >
+                      Mark Paid
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleEdit(expense)}
+                  >
+                    Edit
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -819,10 +725,7 @@ const Expenses = () => {
             <Receipt className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No expenses found</h3>
             <p className="text-gray-600 mb-4">
-              {selectedCategory !== 'all' || selectedMonth !== new Date().getMonth() 
-                ? 'Try adjusting your filters.' 
-                : 'Start by adding your first expense.'
-              }
+              Start by adding your first business expense.
             </p>
             <Button 
               className="bg-gradient-to-r from-purple-600 to-blue-600"

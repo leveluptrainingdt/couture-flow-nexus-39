@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -46,8 +45,8 @@ const Appointments = () => {
     customerEmail: '',
     appointmentDate: new Date(),
     appointmentTime: '',
-    appointmentType: 'consultation' as const,
-    status: 'scheduled' as const,
+    appointmentType: 'consultation' as 'consultation' | 'fitting' | 'delivery' | 'alteration',
+    status: 'scheduled' as 'scheduled' | 'confirmed' | 'in-progress' | 'completed' | 'cancelled',
     notes: '',
     assignedStaff: ''
   });
@@ -360,7 +359,7 @@ const Appointments = () => {
                     id="appointmentType"
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     value={formData.appointmentType}
-                    onChange={(e) => setFormData({...formData, appointmentType: e.target.value as Appointment['appointmentType']})}
+                    onChange={(e) => setFormData({...formData, appointmentType: e.target.value as 'consultation' | 'fitting' | 'delivery' | 'alteration'})}
                     required
                   >
                     {appointmentTypes.map(type => (
@@ -374,7 +373,7 @@ const Appointments = () => {
                     id="status"
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value as Appointment['status']})}
+                    onChange={(e) => setFormData({...formData, status: e.target.value as 'scheduled' | 'confirmed' | 'in-progress' | 'completed' | 'cancelled'})}
                     required
                   >
                     <option value="scheduled">Scheduled</option>

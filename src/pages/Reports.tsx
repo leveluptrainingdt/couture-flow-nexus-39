@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -19,6 +18,42 @@ interface ReportData {
   staff: Array<{ name: string; salary: number; attendance: number; }>;
   inventory: Array<{ category: string; value: number; lowStock: number; }>;
   profit: Array<{ month: string; revenue: number; expenses: number; profit: number; }>;
+}
+
+interface OrderData {
+  id: string;
+  status: string;
+  totalAmount: number;
+  createdAt: any;
+  [key: string]: any;
+}
+
+interface ExpenseData {
+  id: string;
+  category: string;
+  amount: number;
+  date: string;
+  [key: string]: any;
+}
+
+interface StaffData {
+  id: string;
+  name: string;
+  salary: number;
+  attendanceRecords: Array<{
+    date: string;
+    status: string;
+  }>;
+  [key: string]: any;
+}
+
+interface InventoryData {
+  id: string;
+  category: string;
+  quantity: number;
+  unitPrice: number;
+  minStock: number;
+  [key: string]: any;
 }
 
 const Reports = () => {
@@ -94,25 +129,39 @@ const Reports = () => {
         getDocs(collection(db, 'staff'))
       ]);
 
-      // Process orders data
-      const orders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Process orders data with proper typing
+      const orders: OrderData[] = ordersSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as OrderData));
+      
       const filteredOrders = orders.filter(order => {
-        const orderDate = order.createdAt?.toDate() || new Date(order.createdAt);
+        const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
         return orderDate >= startDate && orderDate <= endDate;
       });
 
-      // Process expenses data
-      const expenses = expensesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Process expenses data with proper typing
+      const expenses: ExpenseData[] = expensesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as ExpenseData));
+      
       const filteredExpenses = expenses.filter(expense => {
         const expenseDate = new Date(expense.date);
         return expenseDate >= startDate && expenseDate <= endDate;
       });
 
-      // Process inventory data
-      const inventory = inventorySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Process inventory data with proper typing
+      const inventory: InventoryData[] = inventorySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as InventoryData));
       
-      // Process staff data
-      const staff = staffSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Process staff data with proper typing
+      const staff: StaffData[] = staffSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as StaffData));
 
       // Generate monthly revenue data
       const monthlyRevenue = [];
@@ -123,7 +172,7 @@ const Reports = () => {
         const monthName = date.toLocaleString('default', { month: 'short' });
         
         const monthOrders = filteredOrders.filter(order => {
-          const orderDate = order.createdAt?.toDate() || new Date(order.createdAt);
+          const orderDate = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
           return orderDate.getMonth() === date.getMonth() && orderDate.getFullYear() === date.getFullYear();
         });
         
@@ -150,7 +199,7 @@ const Reports = () => {
       }
 
       // Generate expense breakdown
-      const expensesByCategory = {};
+      const expensesByCategory: Record<string, number> = {};
       const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
       
       filteredExpenses.forEach(expense => {
@@ -163,19 +212,19 @@ const Reports = () => {
 
       const expenseBreakdown = Object.entries(expensesByCategory).map(([category, amount]) => ({
         category,
-        amount: amount as number,
-        percentage: Math.round(((amount as number) / totalExpenses) * 100)
+        amount: amount,
+        percentage: Math.round((amount / totalExpenses) * 100)
       }));
 
       // Generate order status breakdown
-      const ordersByStatus = {
+      const ordersByStatus: Record<string, number> = {
         'new': 0,
         'in-progress': 0,
         'completed': 0,
         'delivered': 0
       };
 
-      const orderValueByStatus = {
+      const orderValueByStatus: Record<string, number> = {
         'new': 0,
         'in-progress': 0,
         'completed': 0,
@@ -183,8 +232,10 @@ const Reports = () => {
       };
 
       filteredOrders.forEach(order => {
-        ordersByStatus[order.status]++;
-        orderValueByStatus[order.status] += order.totalAmount || 0;
+        if (ordersByStatus.hasOwnProperty(order.status)) {
+          ordersByStatus[order.status]++;
+          orderValueByStatus[order.status] += order.totalAmount || 0;
+        }
       });
 
       const orderAnalysis = Object.entries(ordersByStatus).map(([status, count]) => ({
@@ -214,8 +265,8 @@ const Reports = () => {
       });
 
       // Generate inventory analysis
-      const inventoryByCategory = {};
-      const lowStockByCategory = {};
+      const inventoryByCategory: Record<string, number> = {};
+      const lowStockByCategory: Record<string, number> = {};
 
       inventory.forEach(item => {
         const category = item.category || 'Other';
@@ -238,7 +289,7 @@ const Reports = () => {
 
       const inventoryAnalysis = Object.entries(inventoryByCategory).map(([category, value]) => ({
         category,
-        value: value as number,
+        value: value,
         lowStock: lowStockByCategory[category] || 0
       }));
 

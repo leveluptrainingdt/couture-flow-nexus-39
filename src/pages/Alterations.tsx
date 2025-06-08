@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -47,8 +46,8 @@ const Alterations = () => {
     itemType: '',
     alterationType: '',
     description: '',
-    priority: 'medium' as const,
-    status: 'not-started' as const,
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
+    status: 'not-started' as 'not-started' | 'in-progress' | 'completed' | 'delivered',
     assignedStaff: '',
     estimatedCompletion: '',
     cost: 0,
@@ -413,7 +412,7 @@ const Alterations = () => {
                     id="priority"
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     value={formData.priority}
-                    onChange={(e) => setFormData({...formData, priority: e.target.value as Alteration['priority']})}
+                    onChange={(e) => setFormData({...formData, priority: e.target.value as 'low' | 'medium' | 'high' | 'urgent'})}
                     required
                   >
                     <option value="low">Low</option>
@@ -428,7 +427,7 @@ const Alterations = () => {
                     id="status"
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value as Alteration['status']})}
+                    onChange={(e) => setFormData({...formData, status: e.target.value as 'not-started' | 'in-progress' | 'completed' | 'delivered'})}
                     required
                   >
                     <option value="not-started">Not Started</option>
