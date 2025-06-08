@@ -11,6 +11,12 @@ import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Orders from "@/pages/Orders";
 import Inventory from "@/pages/Inventory";
+import Appointments from "@/pages/Appointments";
+import Alterations from "@/pages/Alterations";
+import Staff from "@/pages/Staff";
+import Expenses from "@/pages/Expenses";
+import Reports from "@/pages/Reports";
+import Admin from "@/pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +49,48 @@ const App = () => (
               <ProtectedRoute>
                 <Layout>
                   <Inventory />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/appointments" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Appointments />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/alterations" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Alterations />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/staff" element={
+              <ProtectedRoute adminOnly>
+                <Layout>
+                  <Staff />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/expenses" element={
+              <ProtectedRoute adminOnly>
+                <Layout>
+                  <Expenses />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/reports" element={
+              <ProtectedRoute adminOnly>
+                <Layout>
+                  <Reports />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin" element={
+              <ProtectedRoute adminOnly>
+                <Layout>
+                  <Admin />
                 </Layout>
               </ProtectedRoute>
             } />
