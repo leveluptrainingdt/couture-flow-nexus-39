@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { 
   Plus, 
@@ -18,7 +19,8 @@ import {
   Edit, 
   Trash2, 
   Eye, 
-  Download,
+  Phone,
+  MessageCircle,
   Calendar,
   User,
   Package,
@@ -26,13 +28,16 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  ImageIcon,
+  Upload
 } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, orderBy, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 interface Order {
   id: string;
+  orderNumber: string;
   customerName: string;
   customerPhone: string;
   customerEmail: string;
@@ -40,10 +45,14 @@ interface Order {
   deliveryDate: string;
   items: OrderItem[];
   totalAmount: number;
-  status: 'pending' | 'in-progress' | 'completed' | 'delivered' | 'cancelled';
+  status: 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled';
   priority: 'low' | 'medium' | 'high' | 'urgent';
+  assignedTailor: string;
+  progress: number; // 0-100 percentage
+  maxProgress: number; // Total steps (e.g., 6)
   notes: string;
   measurements?: string;
+  designImages: string[];
   createdBy: string;
   updatedAt: string;
 }
@@ -66,6 +75,8 @@ const Orders: React.FC = () => {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string>('');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -73,10 +84,14 @@ const Orders: React.FC = () => {
     customerPhone: '',
     customerEmail: '',
     deliveryDate: '',
-    status: 'pending' as Order['status'],
+    status: 'received' as Order['status'],
     priority: 'medium' as Order['priority'],
+    assignedTailor: '',
+    progress: 0,
+    maxProgress: 6,
     notes: '',
-    measurements: ''
+    measurements: '',
+    designImages: [] as string[]
   });
 
   const [orderItems, setOrderItems] = useState<OrderItem[]>([{
@@ -87,9 +102,23 @@ const Orders: React.FC = () => {
     description: ''
   }]);
 
+  const tailors = [
+    'Rajesh Kumar',
+    'Priya Sharma',
+    'Anil Verma',
+    'Sunita Devi',
+    'Mohit Singh'
+  ];
+
   useEffect(() => {
     fetchOrders();
   }, []);
+
+  const generateOrderNumber = () => {
+    const prefix = 'SC';
+    const timestamp = Date.now().toString().slice(-6);
+    return `${prefix}${timestamp}`;
+  };
 
   const fetchOrders = async () => {
     try {
@@ -121,7 +150,8 @@ const Orders: React.FC = () => {
       
       const orderData = {
         ...formData,
-        orderDate: new Date().toISOString().split('T')[0],
+        orderNumber: selectedOrder?.orderNumber || generateOrderNumber(),
+        orderDate: selectedOrder?.orderDate || new Date().toISOString().split('T')[0],
         items: orderItems,
         totalAmount,
         createdBy: userData?.name || 'Unknown',
@@ -151,10 +181,14 @@ const Orders: React.FC = () => {
       customerPhone: '',
       customerEmail: '',
       deliveryDate: '',
-      status: 'pending',
+      status: 'received',
       priority: 'medium',
+      assignedTailor: '',
+      progress: 0,
+      maxProgress: 6,
       notes: '',
-      measurements: ''
+      measurements: '',
+      designImages: []
     });
     setOrderItems([{
       itemName: '',
@@ -174,8 +208,12 @@ const Orders: React.FC = () => {
       deliveryDate: order.deliveryDate,
       status: order.status,
       priority: order.priority,
+      assignedTailor: order.assignedTailor || '',
+      progress: order.progress || 0,
+      maxProgress: order.maxProgress || 6,
       notes: order.notes,
-      measurements: order.measurements || ''
+      measurements: order.measurements || '',
+      designImages: order.designImages || []
     });
     setOrderItems(order.items);
     setSelectedOrder(order);
@@ -216,11 +254,42 @@ const Orders: React.FC = () => {
     setOrderItems(updated);
   };
 
+  const handleCall = (phone: string) => {
+    window.open(`tel:${phone}`, '_self');
+  };
+
+  const handleWhatsApp = (phone: string, customerName: string) => {
+    const message = `Hello ${customerName}, this is regarding your tailoring order. How can we help you today?`;
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodedMessage}`, '_blank');
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      // In a real app, you would upload to Cloudinary here
+      // For now, we'll create mock URLs
+      const newImages = Array.from(files).map((file, index) => 
+        `https://via.placeholder.com/400x300?text=Design+${index + 1}`
+      );
+      setFormData({
+        ...formData,
+        designImages: [...formData.designImages, ...newImages]
+      });
+      toast.success(`${files.length} image(s) uploaded successfully!`);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    const updatedImages = formData.designImages.filter((_, i) => i !== index);
+    setFormData({ ...formData, designImages: updatedImages });
+  };
+
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'received': return 'bg-yellow-100 text-yellow-800';
       case 'in-progress': return 'bg-blue-100 text-blue-800';
-      case 'completed': return 'bg-green-100 text-green-800';
+      case 'ready': return 'bg-green-100 text-green-800';
       case 'delivered': return 'bg-purple-100 text-purple-800';
       case 'cancelled': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -237,10 +306,17 @@ const Orders: React.FC = () => {
     }
   };
 
+  const getProgressColor = (progress: number) => {
+    if (progress < 30) return 'bg-red-500';
+    if (progress < 70) return 'bg-yellow-500';
+    return 'bg-green-500';
+  };
+
   const filteredOrders = orders.filter(order => {
     const matchesSearch = order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          order.customerPhone.includes(searchTerm) ||
-                         order.id.toLowerCase().includes(searchTerm.toLowerCase());
+                         order.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         order.assignedTailor?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || order.priority === priorityFilter;
     return matchesSearch && matchesStatus && matchesPriority;
@@ -275,7 +351,7 @@ const Orders: React.FC = () => {
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="Search orders..."
+                  placeholder="Search orders by customer, phone, order#, or tailor..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -288,9 +364,9 @@ const Orders: React.FC = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="received">Received</SelectItem>
                 <SelectItem value="in-progress">In Progress</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="ready">Ready</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
@@ -311,45 +387,88 @@ const Orders: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Orders Grid */}
+      {/* Enhanced Orders Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredOrders.map((order) => (
           <Card key={order.id} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="text-lg">{order.customerName}</CardTitle>
-                  <CardDescription>{order.customerPhone}</CardDescription>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CardTitle className="text-lg">{order.orderNumber || order.id.slice(-6)}</CardTitle>
+                    <Badge className={getPriorityColor(order.priority)}>
+                      {order.priority}
+                    </Badge>
+                  </div>
+                  <CardDescription className="font-medium">{order.customerName}</CardDescription>
+                  <CardDescription className="text-sm">₹{order.totalAmount?.toLocaleString()}</CardDescription>
                 </div>
-                <div className="flex gap-1">
-                  <Badge className={getPriorityColor(order.priority)}>
-                    {order.priority}
-                  </Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between">
                 <Badge className={getStatusColor(order.status)}>
                   {order.status.replace('-', ' ')}
                 </Badge>
-                <span className="text-lg font-semibold text-purple-600">
-                  ₹{order.totalAmount.toLocaleString()}
-                </span>
               </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {order.assignedTailor && (
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-gray-500" />
+                  <span className="text-gray-600">Tailor:</span>
+                  <span className="font-medium">{order.assignedTailor}</span>
+                </div>
+              )}
+              
+              {order.progress !== undefined && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Progress:</span>
+                    <span className="font-medium">{order.progress}/{order.maxProgress || 6}</span>
+                  </div>
+                  <Progress 
+                    value={(order.progress / (order.maxProgress || 6)) * 100} 
+                    className="h-2"
+                  />
+                </div>
+              )}
               
               <div className="space-y-2 text-sm text-gray-600">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4" />
-                  <span>Delivery: {new Date(order.deliveryDate).toLocaleDateString()}</span>
+                  <span>Due: {new Date(order.deliveryDate).toLocaleDateString()}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Package className="h-4 w-4" />
-                  <span>{order.items.length} item(s)</span>
+                  <span>{order.items?.length || 0} item(s)</span>
                 </div>
+                {order.designImages?.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    <span>{order.designImages.length} design(s)</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleCall(order.customerPhone)}
+                  className="flex-1"
+                >
+                  <Phone className="h-4 w-4 mr-1" />
+                  Call
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleWhatsApp(order.customerPhone, order.customerName)}
+                  className="flex-1"
+                >
+                  <MessageCircle className="h-4 w-4 mr-1" />
+                  WhatsApp
+                </Button>
+              </div>
+
+              <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -414,10 +533,11 @@ const Orders: React.FC = () => {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <Tabs defaultValue="customer" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="customer">Customer</TabsTrigger>
                 <TabsTrigger value="items">Items</TabsTrigger>
                 <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="images">Images</TabsTrigger>
               </TabsList>
 
               <TabsContent value="customer" className="space-y-4">
@@ -477,6 +597,7 @@ const Orders: React.FC = () => {
                             <SelectContent>
                               <SelectItem value="blouse">Blouse</SelectItem>
                               <SelectItem value="saree">Saree</SelectItem>
+                              <SelectItem value="lehenga">Lehenga</SelectItem>
                               <SelectItem value="dress">Dress</SelectItem>
                               <SelectItem value="trouser">Trouser</SelectItem>
                               <SelectItem value="kurti">Kurti</SelectItem>
@@ -551,9 +672,9 @@ const Orders: React.FC = () => {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="received">Received</SelectItem>
                         <SelectItem value="in-progress">In Progress</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="ready">Ready</SelectItem>
                         <SelectItem value="delivered">Delivered</SelectItem>
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>
@@ -572,6 +693,40 @@ const Orders: React.FC = () => {
                         <SelectItem value="urgent">Urgent</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="assignedTailor">Assigned Tailor</Label>
+                    <Select value={formData.assignedTailor} onValueChange={(value) => setFormData({...formData, assignedTailor: value})}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select tailor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tailors.map(tailor => (
+                          <SelectItem key={tailor} value={tailor}>{tailor}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="progress">Progress (Current Step)</Label>
+                    <Input
+                      id="progress"
+                      type="number"
+                      min="0"
+                      max={formData.maxProgress}
+                      value={formData.progress}
+                      onChange={(e) => setFormData({...formData, progress: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="maxProgress">Total Steps</Label>
+                    <Input
+                      id="maxProgress"
+                      type="number"
+                      min="1"
+                      value={formData.maxProgress}
+                      onChange={(e) => setFormData({...formData, maxProgress: parseInt(e.target.value) || 6})}
+                    />
                   </div>
                 </div>
                 <div>
@@ -595,6 +750,60 @@ const Orders: React.FC = () => {
                   />
                 </div>
               </TabsContent>
+
+              <TabsContent value="images" className="space-y-4">
+                <div>
+                  <Label>Design Reference Images</Label>
+                  <div className="mt-2">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <Upload className="w-8 h-8 mb-2 text-gray-500" />
+                        <p className="mb-2 text-sm text-gray-500">
+                          <span className="font-semibold">Click to upload</span> design images
+                        </p>
+                        <p className="text-xs text-gray-500">PNG, JPG or GIF (MAX. 10MB)</p>
+                      </div>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+                
+                {formData.designImages.length > 0 && (
+                  <div>
+                    <Label>Uploaded Images</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-2">
+                      {formData.designImages.map((image, index) => (
+                        <div key={index} className="relative group">
+                          <img
+                            src={image}
+                            alt={`Design ${index + 1}`}
+                            className="w-full h-24 object-cover rounded cursor-pointer"
+                            onClick={() => {
+                              setSelectedImage(image);
+                              setShowImageModal(true);
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => removeImage(index)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
             </Tabs>
 
             <div className="flex gap-2 pt-4">
@@ -613,7 +822,7 @@ const Orders: React.FC = () => {
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Order Details</DialogTitle>
+            <DialogTitle>Order Details - {selectedOrder?.orderNumber || selectedOrder?.id?.slice(-6)}</DialogTitle>
             <DialogDescription>Complete order information</DialogDescription>
           </DialogHeader>
 
@@ -629,6 +838,16 @@ const Orders: React.FC = () => {
                       <p><span className="font-medium">Email:</span> {selectedOrder.customerEmail}</p>
                     )}
                   </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button size="sm" onClick={() => handleCall(selectedOrder.customerPhone)}>
+                      <Phone className="h-3 w-3 mr-1" />
+                      Call
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleWhatsApp(selectedOrder.customerPhone, selectedOrder.customerName)}>
+                      <MessageCircle className="h-3 w-3 mr-1" />
+                      WhatsApp
+                    </Button>
+                  </div>
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-2">Order Status</h3>
@@ -639,14 +858,30 @@ const Orders: React.FC = () => {
                     <Badge className={getPriorityColor(selectedOrder.priority)}>
                       {selectedOrder.priority} priority
                     </Badge>
+                    {selectedOrder.assignedTailor && (
+                      <p className="text-sm"><span className="font-medium">Tailor:</span> {selectedOrder.assignedTailor}</p>
+                    )}
                   </div>
                 </div>
               </div>
 
+              {selectedOrder.progress !== undefined && (
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-2">Progress Tracking</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Progress:</span>
+                      <span className="font-medium">{selectedOrder.progress}/{selectedOrder.maxProgress || 6} steps</span>
+                    </div>
+                    <Progress value={(selectedOrder.progress / (selectedOrder.maxProgress || 6)) * 100} className="h-3" />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <h3 className="font-semibold text-gray-900 mb-2">Order Items</h3>
                 <div className="space-y-2">
-                  {selectedOrder.items.map((item, index) => (
+                  {selectedOrder.items?.map((item, index) => (
                     <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded">
                       <div>
                         <p className="font-medium">{item.itemName}</p>
@@ -662,9 +897,29 @@ const Orders: React.FC = () => {
                 </div>
                 <div className="flex justify-between items-center pt-3 border-t mt-3">
                   <span className="font-semibold">Total Amount:</span>
-                  <span className="text-xl font-bold text-purple-600">₹{selectedOrder.totalAmount.toLocaleString()}</span>
+                  <span className="text-xl font-bold text-purple-600">₹{selectedOrder.totalAmount?.toLocaleString()}</span>
                 </div>
               </div>
+
+              {selectedOrder.designImages && selectedOrder.designImages.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-2">Design References</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {selectedOrder.designImages.map((image, index) => (
+                      <img
+                        key={index}
+                        src={image}
+                        alt={`Design ${index + 1}`}
+                        className="w-full h-20 object-cover rounded cursor-pointer hover:opacity-80"
+                        onClick={() => {
+                          setSelectedImage(image);
+                          setShowImageModal(true);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -693,6 +948,24 @@ const Orders: React.FC = () => {
                   <p className="text-sm bg-gray-50 p-3 rounded">{selectedOrder.notes}</p>
                 </div>
               )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Modal */}
+      <Dialog open={showImageModal} onOpenChange={setShowImageModal}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Design Reference</DialogTitle>
+          </DialogHeader>
+          {selectedImage && (
+            <div className="flex justify-center">
+              <img
+                src={selectedImage}
+                alt="Design Reference"
+                className="max-w-full max-h-[70vh] object-contain rounded"
+              />
             </div>
           )}
         </DialogContent>
