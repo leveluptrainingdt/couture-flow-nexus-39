@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -7,47 +7,49 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Search, Edit, Trash2, Package, AlertTriangle, TrendingDown, TrendingUp, Phone, MessageCircle, Image as ImageIcon, Eye } from 'lucide-react';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Plus, Search, Package, TrendingUp, AlertTriangle, Phone, MessageCircle, Edit, Minus, Eye } from 'lucide-react';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
-import { PRODUCT_TYPES, CATEGORIES, ProductType, Category } from '@/utils/productTypes';
+import { productTypes, productCategories } from '@/utils/productTypes';
 
 interface InventoryItem {
   id: string;
   name: string;
-  description: string;
-  category: Category;
-  type: ProductType;
-  quantity: number;
+  category: string;
+  type: string;
+  stock: number;
   minStock: number;
   unitPrice: number;
   supplier: {
     name: string;
     phone: string;
-    email?: string;
+    email?: string; // Made optional
   };
   imageUrl?: string;
+  status: 'In Stock' | 'Low Stock' | 'Out of Stock';
+  totalValue: number;
   createdAt: any;
   updatedAt: any;
 }
 
 const Inventory = () => {
-  const [items, setItems] = useState<InventoryItem[]>([]);
+  const { userData } = useAuth();
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
-    category: '' as Category,
-    type: '' as ProductType,
-    quantity: 0,
-    minStock: 10,
+    category: '',
+    type: '',
+    stock: 0,
+    minStock: 0,
     unitPrice: 0,
     supplier: {
       name: '',
@@ -70,7 +72,7 @@ const Inventory = () => {
       })) as InventoryItem[];
       
       inventoryData.sort((a, b) => a.name.localeCompare(b.name));
-      setItems(inventoryData);
+      setInventory(inventoryData);
     } catch (error) {
       console.error('Error fetching inventory:', error);
       toast({
@@ -86,8 +88,18 @@ const Inventory = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const status = getItemStatus(formData.stock, formData.minStock);
+      const totalValue = formData.stock * formData.unitPrice;
+      
       const itemData = {
         ...formData,
+        supplier: {
+          name: formData.supplier.name,
+          phone: formData.supplier.phone,
+          ...(formData.supplier.email && { email: formData.supplier.email }) // Only include email if provided
+        },
+        status,
+        totalValue,
         updatedAt: serverTimestamp(),
         ...(editingItem ? {} : { createdAt: serverTimestamp() })
       };
@@ -96,13 +108,13 @@ const Inventory = () => {
         await updateDoc(doc(db, 'inventory', editingItem.id), itemData);
         toast({
           title: "Success",
-          description: "Item updated successfully",
+          description: "Inventory item updated successfully",
         });
       } else {
         await addDoc(collection(db, 'inventory'), itemData);
         toast({
           title: "Success",
-          description: "Item added successfully",
+          description: "Inventory item added successfully",
         });
       }
 
@@ -111,10 +123,10 @@ const Inventory = () => {
       resetForm();
       fetchInventory();
     } catch (error) {
-      console.error('Error saving item:', error);
+      console.error('Error saving inventory item:', error);
       toast({
         title: "Error",
-        description: "Failed to save item",
+        description: "Failed to save inventory item",
         variant: "destructive",
       });
     }
@@ -123,11 +135,10 @@ const Inventory = () => {
   const resetForm = () => {
     setFormData({
       name: '',
-      description: '',
-      category: '' as Category,
-      type: '' as ProductType,
-      quantity: 0,
-      minStock: 10,
+      category: '',
+      type: '',
+      stock: 0,
+      minStock: 0,
       unitPrice: 0,
       supplier: {
         name: '',
@@ -142,10 +153,9 @@ const Inventory = () => {
     setEditingItem(item);
     setFormData({
       name: item.name,
-      description: item.description,
       category: item.category,
       type: item.type,
-      quantity: item.quantity,
+      stock: item.stock,
       minStock: item.minStock,
       unitPrice: item.unitPrice,
       supplier: item.supplier,
@@ -179,7 +189,7 @@ const Inventory = () => {
     
     try {
       await updateDoc(doc(db, 'inventory', itemId), {
-        quantity: newQuantity,
+        stock: newQuantity,
         updatedAt: serverTimestamp()
       });
       toast({
@@ -208,20 +218,26 @@ const Inventory = () => {
     }
   };
 
-  const filteredItems = items.filter(item =>
+  const getItemStatus = (stock: number, minStock: number) => {
+    if (stock === 0) return 'Out of Stock';
+    if (stock <= minStock) return 'Low Stock';
+    return 'In Stock';
+  };
+
+  const filteredItems = inventory.filter(item =>
     item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
     item.supplier.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const lowStockItems = items.filter(item => item.quantity <= item.minStock && item.quantity > 0);
-  const outOfStockItems = items.filter(item => item.quantity === 0);
-  const totalValue = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  const lowStockItems = inventory.filter(item => item.stock <= item.minStock && item.stock > 0);
+  const outOfStockItems = inventory.filter(item => item.stock === 0);
+  const totalValue = inventory.reduce((sum, item) => sum + (item.stock * item.unitPrice), 0);
 
   const getStockStatus = (item: InventoryItem) => {
-    if (item.quantity === 0) return { status: 'Out of Stock', color: 'bg-red-100 text-red-700 border-red-200' };
-    if (item.quantity <= item.minStock) return { status: 'Low Stock', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' };
+    if (item.stock === 0) return { status: 'Out of Stock', color: 'bg-red-100 text-red-700 border-red-200' };
+    if (item.stock <= item.minStock) return { status: 'Low Stock', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' };
     return { status: 'In Stock', color: 'bg-green-100 text-green-700 border-green-200' };
   };
 
@@ -285,46 +301,56 @@ const Inventory = () => {
                 
                 <div>
                   <Label htmlFor="category">Category</Label>
-                  <select
+                  <Select
                     id="category"
                     className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     value={formData.category}
-                    onChange={(e) => setFormData({...formData, category: e.target.value as Category})}
+                    onChange={(e) => setFormData({...formData, category: e.target.value})}
                     required
                   >
-                    <option value="">Select category</option>
-                    {CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Select category</SelectItem>
+                      {productCategories.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
               <div>
                 <Label htmlFor="type">Product Type</Label>
-                <select
+                <Select
                   id="type"
                   className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   value={formData.type}
-                  onChange={(e) => setFormData({...formData, type: e.target.value as ProductType})}
+                  onChange={(e) => setFormData({...formData, type: e.target.value})}
                   required
                 >
-                  <option value="">Select type</option>
-                  {PRODUCT_TYPES.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Select type</SelectItem>
+                    {productTypes.map(type => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="quantity">Current Stock</Label>
+                  <Label htmlFor="stock">Current Stock</Label>
                   <Input
-                    id="quantity"
+                    id="stock"
                     type="number"
                     min="0"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value) || 0})}
+                    value={formData.stock}
+                    onChange={(e) => setFormData({...formData, stock: parseInt(e.target.value) || 0})}
                     required
                   />
                 </div>
@@ -432,7 +458,7 @@ const Inventory = () => {
             <Package className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{items.length}</div>
+            <div className="text-2xl font-bold text-gray-900">{inventory.length}</div>
             <p className="text-xs text-gray-500">Unique products in inventory</p>
           </CardContent>
         </Card>
@@ -444,7 +470,7 @@ const Inventory = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">{lowStockItems.length}</div>
-            <p className="text-xs text-gray-500">Items needing restock</p>
+            <p className="text-xs text-gray-500">Items needing restocking</p>
           </CardContent>
         </Card>
         
@@ -506,7 +532,7 @@ const Inventory = () => {
                     <div key={item.id} className="flex justify-between items-center p-2 bg-white rounded border">
                       <span className="font-medium">{item.name}</span>
                       <Badge variant="outline" className="bg-yellow-100 text-yellow-700 border-yellow-200">
-                        {item.quantity}/{item.minStock} left
+                        {item.stock}/{item.minStock} left
                       </Badge>
                     </div>
                   ))}
@@ -564,7 +590,7 @@ const Inventory = () => {
             <TableBody>
               {filteredItems.map((item) => {
                 const stockStatus = getStockStatus(item);
-                const totalValue = item.quantity * item.unitPrice;
+                const totalValue = item.stock * item.unitPrice;
                 
                 return (
                   <TableRow key={item.id}>
@@ -575,7 +601,7 @@ const Inventory = () => {
                             className="w-10 h-10 rounded-md bg-gray-100 flex items-center justify-center cursor-pointer hover:bg-gray-200"
                             onClick={() => setSelectedImage(item.imageUrl!)}
                           >
-                            <ImageIcon className="h-4 w-4 text-gray-500" />
+                            <Eye className="h-4 w-4 text-gray-500" />
                           </div>
                         )}
                         <div>
@@ -590,24 +616,24 @@ const Inventory = () => {
                     <TableCell>{item.type}</TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2">
-                        <span>{item.quantity} units</span>
+                        <span>{item.stock} units</span>
                         <div className="flex space-x-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => updateStock(item.id, item.quantity - 1)}
-                            disabled={item.quantity === 0}
+                            onClick={() => updateStock(item.id, item.stock - 1)}
+                            disabled={item.stock === 0}
                             className="h-6 w-6 p-0"
                           >
-                            <TrendingDown className="h-3 w-3" />
+                            <Minus className="h-3 w-3" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => updateStock(item.id, item.quantity + 1)}
+                            onClick={() => updateStock(item.id, item.stock + 1)}
                             className="h-6 w-6 p-0"
                           >
-                            <TrendingUp className="h-3 w-3" />
+                            <Plus className="h-3 w-3" />
                           </Button>
                         </div>
                       </div>
@@ -697,18 +723,18 @@ const Inventory = () => {
       )}
 
       {/* Image Modal */}
-      {selectedImage && (
-        <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
+      {imagePreview && (
+        <Dialog open={!!imagePreview} onOpenChange={() => setImagePreview(null)}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Product Image</DialogTitle>
             </DialogHeader>
             <div className="flex justify-center">
               <img 
-                src={selectedImage} 
+                src={imagePreview} 
                 alt="Product" 
                 className="max-w-full max-h-96 object-contain rounded-lg"
-                onError={() => setSelectedImage(null)}
+                onError={() => setImagePreview(null)}
               />
             </div>
           </DialogContent>
