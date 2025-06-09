@@ -13,6 +13,7 @@ import Orders from "@/pages/Orders";
 import Inventory from "@/pages/Inventory";
 import Appointments from "@/pages/Appointments";
 import Alterations from "@/pages/Alterations";
+import Customers from "@/pages/Customers";
 import Staff from "@/pages/Staff";
 import Expenses from "@/pages/Expenses";
 import Reports from "@/pages/Reports";
@@ -63,6 +64,13 @@ const App = () => (
               <ProtectedRoute>
                 <Layout>
                   <Alterations />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/customers" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Customers />
                 </Layout>
               </ProtectedRoute>
             } />

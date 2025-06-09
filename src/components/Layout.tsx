@@ -14,7 +14,8 @@ import {
   LogOut,
   Crown,
   Menu,
-  X
+  X,
+  User
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
@@ -31,6 +32,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, access: ['admin', 'staff'] },
     { name: 'Orders', href: '/orders', icon: ShoppingCart, access: ['admin', 'staff'] },
+    { name: 'Customers', href: '/customers', icon: User, access: ['admin', 'staff'] },
     { name: 'Inventory', href: '/inventory', icon: Package, access: ['admin', 'staff'] },
     { name: 'Appointments', href: '/appointments', icon: Calendar, access: ['admin', 'staff'] },
     { name: 'Alterations', href: '/alterations', icon: Settings, access: ['admin', 'staff'] },
