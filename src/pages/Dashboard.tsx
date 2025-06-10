@@ -18,9 +18,10 @@ import {
   Plus,
   UserPlus
 } from 'lucide-react';
-import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { useNavigate } from 'react-router-dom';
+import { useRealTimeStats } from '@/hooks/useRealTimeData';
+import ContactActions from '@/components/ContactActions';
+import { getOrderStatusMessage } from '@/utils/contactUtils';
 
 interface Order {
   id: string;
@@ -45,22 +46,6 @@ interface Order {
   };
 }
 
-interface InventoryItem {
-  id: string;
-  name: string;
-  quantity: number;
-  minStock?: number;
-  price: number;
-  category?: string;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  totalOrders: number;
-  totalSpent: number;
-}
-
 interface Alert {
   id: string;
   type: 'overdue' | 'low-stock' | 'payment';
@@ -71,165 +56,20 @@ interface Alert {
   severity: 'high' | 'medium' | 'low';
 }
 
-interface DashboardStats {
-  totalRevenue: number;
-  totalOrders: number;
-  activeOrders: number;
-  pendingOrders: number;
-  completedOrders: number;
-  totalCustomers: number;
-  lowStockItems: number;
-  todayAppointments: number;
-}
-
 const Dashboard = () => {
   const { userData } = useAuth();
   const navigate = useNavigate();
-  const [stats, setStats] = useState<DashboardStats>({
-    totalRevenue: 0,
-    totalOrders: 0,
-    activeOrders: 0,
-    pendingOrders: 0,
-    completedOrders: 0,
-    totalCustomers: 0,
-    lowStockItems: 0,
-    todayAppointments: 0
-  });
+  const stats = useRealTimeStats();
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
+  // Redirect staff to staff dashboard
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
-    try {
-      // Fetch orders
-      const ordersSnapshot = await getDocs(collection(db, 'orders'));
-      const orders: Order[] = ordersSnapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      } as Order));
-      
-      // Fetch recent orders
-      const recentOrdersQuery = query(
-        collection(db, 'orders'),
-        orderBy('createdAt', 'desc'),
-        limit(5)
-      );
-      const recentOrdersSnapshot = await getDocs(recentOrdersQuery);
-      const recentOrdersData: Order[] = recentOrdersSnapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      } as Order));
-
-      // Fetch inventory
-      const inventorySnapshot = await getDocs(collection(db, 'inventory'));
-      const inventory: InventoryItem[] = inventorySnapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      } as InventoryItem));
-
-      // Fetch customers
-      const customersSnapshot = await getDocs(collection(db, 'customers'));
-      const customers: Customer[] = customersSnapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      } as Customer));
-
-      // Calculate stats
-      const totalOrders = orders.length;
-      const activeOrders = orders.filter(order => 
-        ['received', 'in-progress'].includes(order.status)
-      ).length;
-      const pendingOrders = orders.filter(order => order.status === 'received').length;
-      const completedOrders = orders.filter(order => 
-        ['ready', 'delivered'].includes(order.status)
-      ).length;
-      const totalRevenue = orders
-        .filter(order => order.status === 'delivered')
-        .reduce((sum, order) => sum + (order.totalAmount || 0), 0);
-      const lowStockItems = inventory.filter(item => 
-        item.quantity < (item.minStock || 10)
-      ).length;
-      const totalCustomers = customers.length;
-
-      // Generate alerts
-      const generatedAlerts: Alert[] = [];
-      
-      // Overdue orders alert
-      const overdueOrders = orders.filter(order => {
-        if (order.status === 'delivered') return false;
-        const dueDate = new Date(order.deliveryDate);
-        const today = new Date();
-        return dueDate < today;
-      });
-      
-      if (overdueOrders.length > 0) {
-        generatedAlerts.push({
-          id: 'overdue-orders',
-          type: 'overdue',
-          title: 'Overdue Orders',
-          description: `${overdueOrders.length} orders are past their delivery date`,
-          count: overdueOrders.length,
-          severity: 'high'
-        });
-      }
-
-      // Low stock alert
-      if (lowStockItems > 0) {
-        const lowStockNames = inventory
-          .filter(item => item.quantity < (item.minStock || 10))
-          .slice(0, 3)
-          .map(item => item.name)
-          .join(', ');
-        
-        generatedAlerts.push({
-          id: 'low-stock',
-          type: 'low-stock',
-          title: 'Low Stock Items',
-          description: `${lowStockItems} items running low: ${lowStockNames}${lowStockItems > 3 ? '...' : ''}`,
-          count: lowStockItems,
-          severity: 'medium'
-        });
-      }
-
-      // Payment status alert (mock data)
-      const pendingPayments = orders
-        .filter(order => order.status === 'delivered')
-        .reduce((sum, order) => sum + (order.totalAmount || 0), 0) * 0.1; // Assume 10% pending
-      
-      if (pendingPayments > 0) {
-        generatedAlerts.push({
-          id: 'pending-payments',
-          type: 'payment',
-          title: 'Payment Updates',
-          description: `₹${pendingPayments.toLocaleString()} in recent payments received`,
-          amount: pendingPayments,
-          severity: 'low'
-        });
-      }
-
-      setStats({
-        totalRevenue,
-        totalOrders,
-        activeOrders,
-        pendingOrders,
-        completedOrders,
-        totalCustomers,
-        lowStockItems,
-        todayAppointments: 0 // Will be implemented with appointments
-      });
-
-      setRecentOrders(recentOrdersData);
-      setAlerts(generatedAlerts);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-    } finally {
-      setLoading(false);
+    if (userData?.role === 'staff') {
+      navigate('/staff/dashboard');
     }
-  };
+  }, [userData, navigate]);
 
   const handleQuickAction = (action: string) => {
     switch (action) {
@@ -408,7 +248,7 @@ const Dashboard = () => {
               {recentOrders.length > 0 ? (
                 recentOrders.map((order) => (
                   <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
+                    <div className="flex-1">
                       <div className="font-medium text-gray-900">
                         {order.customerName}
                       </div>
@@ -416,18 +256,24 @@ const Dashboard = () => {
                         Order #{order.id.slice(-6)}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-medium text-gray-900">
-                        ₹{order.totalAmount?.toLocaleString()}
+                    <div className="flex items-center space-x-2">
+                      <div className="text-right">
+                        <div className="font-medium text-gray-900">
+                          ₹{order.totalAmount?.toLocaleString()}
+                        </div>
+                        <div className={`text-xs px-2 py-1 rounded-full inline-block ${
+                          order.status === 'delivered' ? 'bg-green-100 text-green-700' :
+                          order.status === 'ready' ? 'bg-blue-100 text-blue-700' :
+                          order.status === 'in-progress' ? 'bg-orange-100 text-orange-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {order.status?.replace('-', ' ')}
+                        </div>
                       </div>
-                      <div className={`text-xs px-2 py-1 rounded-full inline-block ${
-                        order.status === 'delivered' ? 'bg-green-100 text-green-700' :
-                        order.status === 'ready' ? 'bg-blue-100 text-blue-700' :
-                        order.status === 'in-progress' ? 'bg-orange-100 text-orange-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {order.status?.replace('-', ' ')}
-                      </div>
+                      <ContactActions 
+                        phone={order.customerPhone}
+                        message={getOrderStatusMessage(order.customerName, order.id, order.status)}
+                      />
                     </div>
                   </div>
                 ))

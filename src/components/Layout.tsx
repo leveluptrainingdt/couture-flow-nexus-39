@@ -16,7 +16,8 @@ import {
   Menu,
   X,
   User,
-  Shield
+  Shield,
+  Clock
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
@@ -30,8 +31,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, access: ['admin', 'staff'] },
+  const adminNavigation = [
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, access: ['admin'] },
     { name: 'Orders', href: '/orders', icon: ShoppingCart, access: ['admin', 'staff'] },
     { name: 'Customers', href: '/customers', icon: User, access: ['admin', 'staff'] },
     { name: 'Inventory', href: '/inventory', icon: Package, access: ['admin', 'staff'] },
@@ -44,6 +45,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Control Panel', href: '/admin/control-panel', icon: Shield, access: ['admin'] },
     { name: 'Settings', href: '/admin/settings', icon: Settings, access: ['admin'] },
   ];
+
+  const staffNavigation = [
+    { name: 'Dashboard', href: '/staff/dashboard', icon: LayoutDashboard, access: ['staff'] },
+    { name: 'Orders', href: '/orders', icon: ShoppingCart, access: ['staff'] },
+    { name: 'Customers', href: '/customers', icon: User, access: ['staff'] },
+    { name: 'Inventory', href: '/inventory', icon: Package, access: ['staff'] },
+    { name: 'Appointments', href: '/appointments', icon: Calendar, access: ['staff'] },
+    { name: 'Alterations', href: '/alterations', icon: Clock, access: ['staff'] },
+  ];
+
+  const navigation = userData?.role === 'admin' ? adminNavigation : staffNavigation;
 
   const filteredNavigation = navigation.filter(item => 
     item.access.includes(userData?.role || 'staff')
