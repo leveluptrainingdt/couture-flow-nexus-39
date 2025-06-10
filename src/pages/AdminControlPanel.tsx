@@ -6,35 +6,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
-  Settings, 
-  Users, 
-  Database, 
   Shield, 
+  Database, 
+  Users, 
   Activity, 
   Bell, 
-  Key, 
-  Trash2, 
+  Settings, 
   Download, 
   Upload,
-  Server,
+  Monitor,
   Clock,
   HardDrive,
+  Wifi,
   AlertTriangle,
   CheckCircle,
-  UserPlus,
-  RefreshCw,
-  Eye,
-  EyeOff,
-  Calendar,
-  BarChart3
+  Lock,
+  Key
 } from 'lucide-react';
-import { collection, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, addDoc, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 
@@ -45,14 +38,14 @@ interface SystemMetrics {
   systemRevenue: number;
   storageUsed: number;
   databaseSize: number;
-  uptime: string;
+  systemUptime: string;
 }
 
 interface BackupRecord {
   id: string;
   date: string;
   type: 'full' | 'orders' | 'inventory' | 'customers';
-  size: string;
+  size: number;
   status: 'completed' | 'failed' | 'in-progress';
 }
 
@@ -62,27 +55,19 @@ interface SystemUser {
   email: string;
   role: 'admin' | 'staff';
   isActive: boolean;
-  lastLogin: string;
+  lastLogin?: Date;
   totalLogins: number;
   lastIP?: string;
-  permissions: {
-    orders: { read: boolean; write: boolean; delete: boolean; };
-    inventory: { read: boolean; write: boolean; delete: boolean; };
-    customers: { read: boolean; write: boolean; delete: boolean; };
-    staff: { read: boolean; write: boolean; delete: boolean; };
-    reports: { read: boolean; write: boolean; delete: boolean; };
-    admin: { read: boolean; write: boolean; delete: boolean; };
-  };
 }
 
 interface ActivityLog {
   id: string;
   userId: string;
   userName: string;
-  action: string;
+  action: 'create' | 'update' | 'delete' | 'login' | 'logout';
   module: string;
   details: string;
-  timestamp: any;
+  timestamp: Date;
   ipAddress?: string;
   beforeData?: any;
   afterData?: any;
@@ -97,71 +82,68 @@ interface SystemSettings {
     expenses: boolean;
     inventory: boolean;
     appointments: boolean;
-    staff: boolean;
+    alterations: boolean;
     reports: boolean;
   };
   dateFormat: string;
   currency: string;
-  timezone: string;
-  backupSchedule: 'daily' | 'weekly' | 'monthly';
-  twoFactorEnabled: boolean;
+  autoBackup: boolean;
+  backupFrequency: 'daily' | 'weekly' | 'monthly';
 }
 
 const AdminControlPanel = () => {
   const { userData } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
+  const [activeTab, setActiveTab] = useState('metrics');
+  
+  // State for different sections
+  const [metrics, setMetrics] = useState<SystemMetrics>({
     totalUsers: 0,
     activeUsers: 0,
     totalOrders: 0,
     systemRevenue: 0,
     storageUsed: 0,
     databaseSize: 0,
-    uptime: '0 days'
+    systemUptime: '0 days'
   });
 
-  const [backupRecords, setBackupRecords] = useState<BackupRecord[]>([]);
-  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+  const [backups, setBackups] = useState<BackupRecord[]>([]);
+  const [users, setUsers] = useState<SystemUser[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
-    systemName: "Swetha's Couture Management System",
+    systemName: "Swetha's Couture",
     adminEmail: 'admin@swethascouture.com',
     primaryPhone: '+91 9876543210',
-    businessLocation: 'Chennai, Tamil Nadu, India',
+    businessLocation: 'Bangalore, India',
     enabledModules: {
       expenses: true,
       inventory: true,
       appointments: true,
-      staff: true,
+      alterations: true,
       reports: true
     },
     dateFormat: 'DD/MM/YYYY',
     currency: 'INR',
-    timezone: 'Asia/Kolkata',
-    backupSchedule: 'daily',
-    twoFactorEnabled: false
+    autoBackup: true,
+    backupFrequency: 'daily'
   });
 
-  const [isBackupDialogOpen, setIsBackupDialogOpen] = useState(false);
-  const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<SystemUser | null>(null);
-  const [isCreatingBackup, setIsCreatingBackup] = useState(false);
-  const [backupType, setBackupType] = useState<'full' | 'orders' | 'inventory' | 'customers'>('full');
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [backupInProgress, setBackupInProgress] = useState(false);
 
   useEffect(() => {
     if (userData?.role === 'admin') {
-      fetchSystemData();
+      fetchControlPanelData();
     } else {
       setLoading(false);
     }
   }, [userData]);
 
-  const fetchSystemData = async () => {
+  const fetchControlPanelData = async () => {
     try {
       setLoading(true);
       
-      // Fetch system metrics
+      // Fetch real metrics from Firebase
       const [ordersSnapshot, usersSnapshot, inventorySnapshot] = await Promise.all([
         getDocs(collection(db, 'orders')),
         getDocs(collection(db, 'users')),
@@ -169,72 +151,61 @@ const AdminControlPanel = () => {
       ]);
 
       const orders = ordersSnapshot.docs.map(doc => doc.data());
-      const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
+      const users = usersSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
       const totalRevenue = orders
         .filter(order => order.status === 'completed')
         .reduce((sum, order) => sum + (order.totalAmount || 0), 0);
 
       const activeUsers = users.filter(user => {
-        const lastLogin = user.lastLogin?.toDate?.() || new Date(user.lastLogin || 0);
-        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        return lastLogin > weekAgo;
+        if (user.lastLogin) {
+          const lastLogin = new Date(user.lastLogin.seconds * 1000);
+          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          return lastLogin > weekAgo;
+        }
+        return false;
       }).length;
 
-      setSystemMetrics({
+      setMetrics({
         totalUsers: users.length,
         activeUsers,
         totalOrders: orders.length,
         systemRevenue: totalRevenue,
-        storageUsed: Math.random() * 500 + 100, // Mock storage usage
-        databaseSize: Math.random() * 50 + 10, // Mock DB size
-        uptime: '15 days, 8 hours'
+        storageUsed: Math.random() * 500 + 100, // Mock storage
+        databaseSize: Math.random() * 50 + 20, // Mock DB size
+        systemUptime: `${Math.floor(Math.random() * 30) + 1} days`
       });
 
-      // Transform users data for management
-      const transformedUsers: SystemUser[] = users.map(user => ({
+      // Set users data
+      setUsers(users.map(user => ({
         id: user.id,
         name: user.name || 'Unknown',
         email: user.email || '',
         role: user.role || 'staff',
         isActive: user.isActive !== false,
-        lastLogin: user.lastLogin?.toDate?.()?.toLocaleDateString() || 'Never',
+        lastLogin: user.lastLogin ? new Date(user.lastLogin.seconds * 1000) : undefined,
         totalLogins: user.totalLogins || 0,
-        lastIP: user.lastIP || '192.168.1.1',
-        permissions: user.permissions || {
-          orders: { read: true, write: true, delete: false },
-          inventory: { read: true, write: true, delete: false },
-          customers: { read: true, write: false, delete: false },
-          staff: { read: false, write: false, delete: false },
-          reports: { read: true, write: false, delete: false },
-          admin: { read: false, write: false, delete: false }
-        }
-      }));
-
-      setSystemUsers(transformedUsers);
+        lastIP: user.lastIP || '192.168.1.1'
+      })));
 
       // Mock backup records
-      setBackupRecords([
+      setBackups([
         {
           id: '1',
-          date: new Date(Date.now() - 86400000).toLocaleDateString(),
+          date: new Date().toISOString(),
           type: 'full',
-          size: '45.2 MB',
+          size: 245.6,
           status: 'completed'
         },
         {
           id: '2',
-          date: new Date(Date.now() - 2 * 86400000).toLocaleDateString(),
+          date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
           type: 'orders',
-          size: '12.8 MB',
+          size: 89.2,
           status: 'completed'
-        },
-        {
-          id: '3',
-          date: new Date(Date.now() - 3 * 86400000).toLocaleDateString(),
-          type: 'inventory',
-          size: '8.4 MB',
-          status: 'failed'
         }
       ]);
 
@@ -244,39 +215,29 @@ const AdminControlPanel = () => {
           id: '1',
           userId: userData?.uid || '',
           userName: userData?.name || '',
-          action: 'LOGIN',
+          action: 'login',
           module: 'Authentication',
           details: 'Admin logged into control panel',
           timestamp: new Date(),
-          ipAddress: '192.168.1.100'
+          ipAddress: '192.168.1.1'
         },
         {
           id: '2',
           userId: userData?.uid || '',
           userName: userData?.name || '',
-          action: 'CREATE',
+          action: 'create',
           module: 'Orders',
-          details: 'Created new order #ORD-2025-001',
+          details: 'Created new order #12345',
           timestamp: new Date(Date.now() - 3600000),
-          ipAddress: '192.168.1.100'
-        },
-        {
-          id: '3',
-          userId: 'user123',
-          userName: 'Staff Member',
-          action: 'UPDATE',
-          module: 'Inventory',
-          details: 'Updated silk fabric quantity',
-          timestamp: new Date(Date.now() - 7200000),
-          ipAddress: '192.168.1.101'
+          ipAddress: '192.168.1.1'
         }
       ]);
 
     } catch (error) {
-      console.error('Error fetching system data:', error);
+      console.error('Error fetching control panel data:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch system data",
+        description: "Failed to fetch control panel data",
         variant: "destructive",
       });
     } finally {
@@ -284,34 +245,35 @@ const AdminControlPanel = () => {
     }
   };
 
-  const createBackup = async () => {
+  const createBackup = async (type: string) => {
     try {
-      setIsCreatingBackup(true);
+      setBackupInProgress(true);
       
+      // Simulate backup process
       toast({
         title: "Backup Started",
-        description: `Creating ${backupType} backup...`,
+        description: `Creating ${type} backup...`,
       });
 
-      // Mock backup creation process
+      // Mock backup creation with delay
       await new Promise(resolve => setTimeout(resolve, 3000));
-      
+
       const newBackup: BackupRecord = {
         id: Date.now().toString(),
-        date: new Date().toLocaleDateString(),
-        type: backupType,
-        size: `${Math.floor(Math.random() * 50 + 10)}.${Math.floor(Math.random() * 9)} MB`,
+        date: new Date().toISOString(),
+        type: type as any,
+        size: Math.random() * 200 + 50,
         status: 'completed'
       };
 
-      setBackupRecords(prev => [newBackup, ...prev]);
+      setBackups(prev => [newBackup, ...prev]);
       
       toast({
         title: "Backup Complete",
-        description: `${backupType} backup created successfully`,
+        description: `${type} backup created successfully`,
       });
       
-      setIsBackupDialogOpen(false);
+      setIsBackupModalOpen(false);
     } catch (error) {
       console.error('Error creating backup:', error);
       toast({
@@ -320,13 +282,13 @@ const AdminControlPanel = () => {
         variant: "destructive",
       });
     } finally {
-      setIsCreatingBackup(false);
+      setBackupInProgress(false);
     }
   };
 
   const updateSystemSettings = async () => {
     try {
-      // In a real app, this would update system settings in the database
+      // In a real app, this would save to Firebase
       toast({
         title: "Settings Updated",
         description: "System settings saved successfully",
@@ -341,67 +303,45 @@ const AdminControlPanel = () => {
     }
   };
 
-  const updateUserPermissions = async (userId: string, newPermissions: SystemUser['permissions']) => {
+  const toggleUserStatus = async (userId: string, isActive: boolean) => {
     try {
-      setSystemUsers(prev => 
+      setUsers(prev => 
         prev.map(user => 
-          user.id === userId 
-            ? { ...user, permissions: newPermissions }
-            : user
+          user.id === userId ? { ...user, isActive } : user
         )
       );
       
       toast({
-        title: "Permissions Updated",
-        description: "User permissions updated successfully",
+        title: "User Updated",
+        description: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
       });
-      setIsUserDialogOpen(false);
     } catch (error) {
-      console.error('Error updating permissions:', error);
+      console.error('Error updating user:', error);
       toast({
         title: "Error",
-        description: "Failed to update permissions",
+        description: "Failed to update user",
         variant: "destructive",
       });
     }
   };
 
-  const toggleUserStatus = async (userId: string) => {
-    try {
-      setSystemUsers(prev => 
-        prev.map(user => 
-          user.id === userId 
-            ? { ...user, isActive: !user.isActive }
-            : user
-        )
-      );
-      
-      toast({
-        title: "User Status Updated",
-        description: "User status changed successfully",
-      });
-    } catch (error) {
-      console.error('Error updating user status:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update user status",
-        variant: "destructive",
-      });
+  const resetUserPassword = async (userId: string, email: string) => {
+    if (window.confirm(`Reset password for ${email}?`)) {
+      try {
+        // In a real app, this would use Firebase Auth password reset
+        toast({
+          title: "Password Reset",
+          description: `Password reset email sent to ${email}`,
+        });
+      } catch (error) {
+        console.error('Error resetting password:', error);
+        toast({
+          title: "Error",
+          description: "Failed to reset password",
+          variant: "destructive",
+        });
+      }
     }
-  };
-
-  const exportLogs = (format: 'csv' | 'pdf') => {
-    toast({
-      title: "Export Started",
-      description: `Exporting activity logs as ${format.toUpperCase()}...`,
-    });
-    
-    setTimeout(() => {
-      toast({
-        title: "Export Complete",
-        description: `Activity logs exported successfully`,
-      });
-    }, 2000);
   };
 
   if (userData?.role !== 'admin') {
@@ -424,7 +364,7 @@ const AdminControlPanel = () => {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Admin Control Panel</h1>
+          <h1 className="text-3xl font-bold">Control Panel</h1>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[...Array(8)].map((_, i) => (
@@ -448,20 +388,16 @@ const AdminControlPanel = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 flex items-center space-x-3">
-            <Settings className="h-8 w-8 text-purple-600" />
-            <span>Admin Control Panel</span>
+            <Shield className="h-8 w-8 text-purple-600" />
+            <span>System Control Panel</span>
           </h1>
-          <p className="text-gray-600">System management and configuration</p>
+          <p className="text-gray-600">Real-time system monitoring and administration</p>
         </div>
         <div className="flex space-x-3">
-          <Button onClick={() => exportLogs('csv')} variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            Export Logs
-          </Button>
-          <Dialog open={isBackupDialogOpen} onOpenChange={setIsBackupDialogOpen}>
+          <Dialog open={isBackupModalOpen} onOpenChange={setIsBackupModalOpen}>
             <DialogTrigger asChild>
               <Button>
-                <Database className="h-4 w-4 mr-2" />
+                <Download className="h-4 w-4 mr-2" />
                 Create Backup
               </Button>
             </DialogTrigger>
@@ -469,51 +405,53 @@ const AdminControlPanel = () => {
               <DialogHeader>
                 <DialogTitle>Create System Backup</DialogTitle>
                 <DialogDescription>
-                  Choose the type of backup you want to create.
+                  Select the type of backup you want to create.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
-                <div>
-                  <Label htmlFor="backupType">Backup Type</Label>
-                  <Select value={backupType} onValueChange={(value: any) => setBackupType(value)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="full">Full System Backup</SelectItem>
-                      <SelectItem value="orders">Orders Only</SelectItem>
-                      <SelectItem value="inventory">Inventory Only</SelectItem>
-                      <SelectItem value="customers">Customer Data Only</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> The backup process may take several minutes depending on data size.
-                  </p>
-                </div>
-                <div className="flex justify-end space-x-3">
-                  <Button variant="outline" onClick={() => setIsBackupDialogOpen(false)}>
-                    Cancel
+                <div className="grid grid-cols-2 gap-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => createBackup('full')}
+                    disabled={backupInProgress}
+                  >
+                    Full Backup
                   </Button>
-                  <Button onClick={createBackup} disabled={isCreatingBackup}>
-                    {isCreatingBackup ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      'Create Backup'
-                    )}
+                  <Button 
+                    variant="outline" 
+                    onClick={() => createBackup('orders')}
+                    disabled={backupInProgress}
+                  >
+                    Orders Only
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => createBackup('inventory')}
+                    disabled={backupInProgress}
+                  >
+                    Inventory Only
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => createBackup('customers')}
+                    disabled={backupInProgress}
+                  >
+                    Customers Only
                   </Button>
                 </div>
+                {backupInProgress && (
+                  <div className="text-center py-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
+                    <p className="text-sm text-gray-600 mt-2">Creating backup...</p>
+                  </div>
+                )}
               </div>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
-      {/* System Metrics */}
+      {/* System Metrics Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -521,18 +459,29 @@ const AdminControlPanel = () => {
             <Users className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{systemMetrics.totalUsers}</div>
-            <p className="text-xs text-green-600">{systemMetrics.activeUsers} active this week</p>
+            <div className="text-2xl font-bold text-gray-900">{metrics.totalUsers}</div>
+            <p className="text-xs text-gray-500">System users</p>
           </CardContent>
         </Card>
-        
+
+        <Card className="border-0 shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">Active Users</CardTitle>
+            <Activity className="h-5 w-5 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-gray-900">{metrics.activeUsers}</div>
+            <p className="text-xs text-gray-500">Last 7 days</p>
+          </CardContent>
+        </Card>
+
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Orders</CardTitle>
-            <BarChart3 className="h-5 w-5 text-green-600" />
+            <Database className="h-5 w-5 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{systemMetrics.totalOrders}</div>
+            <div className="text-2xl font-bold text-gray-900">{metrics.totalOrders}</div>
             <p className="text-xs text-gray-500">All time orders</p>
           </CardContent>
         </Card>
@@ -540,10 +489,10 @@ const AdminControlPanel = () => {
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">System Revenue</CardTitle>
-            <Activity className="h-5 w-5 text-purple-600" />
+            <Monitor className="h-5 w-5 text-gold-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">₹{systemMetrics.systemRevenue.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-gray-900">₹{metrics.systemRevenue.toLocaleString()}</div>
             <p className="text-xs text-gray-500">Total revenue</p>
           </CardContent>
         </Card>
@@ -554,256 +503,204 @@ const AdminControlPanel = () => {
             <HardDrive className="h-5 w-5 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{systemMetrics.storageUsed.toFixed(1)} MB</div>
-            <p className="text-xs text-gray-500">Database: {systemMetrics.databaseSize.toFixed(1)} MB</p>
+            <div className="text-2xl font-bold text-gray-900">{metrics.storageUsed.toFixed(1)} MB</div>
+            <p className="text-xs text-gray-500">Cloudinary storage</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-md">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">Database Size</CardTitle>
+            <Database className="h-5 w-5 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-gray-900">{metrics.databaseSize.toFixed(1)} MB</div>
+            <p className="text-xs text-gray-500">Firebase storage</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">System Uptime</CardTitle>
-            <Clock className="h-5 w-5 text-green-600" />
+            <Clock className="h-5 w-5 text-cyan-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{systemMetrics.uptime}</div>
-            <p className="text-xs text-green-600">System running smoothly</p>
+            <div className="text-2xl font-bold text-gray-900">{metrics.systemUptime}</div>
+            <p className="text-xs text-gray-500">Continuous uptime</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">System Status</CardTitle>
-            <CheckCircle className="h-5 w-5 text-green-600" />
+            <Wifi className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">Healthy</div>
-            <p className="text-xs text-gray-500">All services operational</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Last Backup</CardTitle>
-            <Database className="h-5 w-5 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">
-              {backupRecords[0]?.date || 'Never'}
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <span className="text-lg font-bold text-green-600">Healthy</span>
             </div>
-            <p className="text-xs text-gray-500">
-              {backupRecords[0]?.status === 'completed' ? 'Successful' : 'Failed'}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Active Alerts</CardTitle>
-            <Bell className="h-5 w-5 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">2</div>
-            <p className="text-xs text-red-600">Requires attention</p>
+            <p className="text-xs text-gray-500">All systems operational</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Control Panel */}
+      {/* Control Panel Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="backup">Backup</TabsTrigger>
+          <TabsTrigger value="metrics">Metrics</TabsTrigger>
+          <TabsTrigger value="backups">Backups</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="logs">Activity Logs</TabsTrigger>
+          <TabsTrigger value="logs">Activity</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-6">
+        <TabsContent value="metrics" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="border-0 shadow-md">
               <CardHeader>
-                <CardTitle>System Health</CardTitle>
-                <CardDescription>Current system status and performance</CardDescription>
+                <CardTitle>System Health Monitor</CardTitle>
+                <CardDescription>Real-time system performance metrics</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                   <div className="flex items-center space-x-3">
-                    <CheckCircle className="w-5 h-5 text-green-500" />
+                    <CheckCircle className="h-5 w-5 text-green-600" />
                     <span className="font-medium">Database Connection</span>
                   </div>
-                  <Badge className="bg-green-100 text-green-700">Healthy</Badge>
+                  <Badge className="bg-green-100 text-green-700">Online</Badge>
                 </div>
                 
                 <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                   <div className="flex items-center space-x-3">
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                    <span className="font-medium">Cloud Storage</span>
-                  </div>
-                  <Badge className="bg-green-100 text-green-700">Connected</Badge>
-                </div>
-                
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <CheckCircle className="w-5 h-5 text-green-500" />
+                    <CheckCircle className="h-5 w-5 text-green-600" />
                     <span className="font-medium">Authentication Service</span>
                   </div>
                   <Badge className="bg-green-100 text-green-700">Active</Badge>
                 </div>
-
-                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                
+                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                   <div className="flex items-center space-x-3">
-                    <AlertTriangle className="w-5 h-5 text-yellow-500" />
-                    <span className="font-medium">Storage Usage</span>
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <span className="font-medium">Cloud Storage</span>
                   </div>
-                  <span className="text-sm text-gray-600">75% used</span>
+                  <Badge className="bg-green-100 text-green-700">Connected</Badge>
+                </div>
+
+                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <Activity className="h-5 w-5 text-blue-600" />
+                    <span className="font-medium">API Response Time</span>
+                  </div>
+                  <span className="text-sm font-medium">245ms avg</span>
                 </div>
               </CardContent>
             </Card>
 
             <Card className="border-0 shadow-md">
               <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
-                <CardDescription>Common administrative tasks</CardDescription>
+                <CardTitle>Recent Alerts</CardTitle>
+                <CardDescription>System notifications and warnings</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={() => setIsBackupDialogOpen(true)}
-                >
-                  <Database className="h-4 w-4 mr-2" />
-                  Create System Backup
-                </Button>
+                <div className="flex items-center space-x-3 p-3 bg-yellow-50 rounded-lg">
+                  <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">Storage at 75%</div>
+                    <div className="text-xs text-gray-600">Consider upgrading storage plan</div>
+                  </div>
+                </div>
                 
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={() => setActiveTab('users')}
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  Manage Users
-                </Button>
+                <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
+                  <Bell className="h-5 w-5 text-blue-600" />
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">Backup completed</div>
+                    <div className="text-xs text-gray-600">Daily backup finished successfully</div>
+                  </div>
+                </div>
                 
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={() => exportLogs('csv')}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export System Logs
-                </Button>
-                
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={() => setActiveTab('settings')}
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  System Settings
-                </Button>
+                <div className="flex items-center space-x-3 p-3 bg-green-50 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">System updated</div>
+                    <div className="text-xs text-gray-600">All modules are up to date</div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
-
-          {/* Active Alerts */}
-          <Card className="border-0 shadow-md">
-            <CardHeader>
-              <CardTitle>System Alerts</CardTitle>
-              <CardDescription>Issues requiring attention</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
-                  <div className="flex items-center space-x-3">
-                    <AlertTriangle className="w-5 h-5 text-yellow-500" />
-                    <div>
-                      <div className="font-medium">Storage Almost Full</div>
-                      <div className="text-sm text-gray-600">Storage usage is at 75%. Consider cleaning up old backups.</div>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm">Resolve</Button>
-                </div>
-                
-                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
-                  <div className="flex items-center space-x-3">
-                    <Bell className="w-5 h-5 text-blue-500" />
-                    <div>
-                      <div className="font-medium">Backup Schedule Reminder</div>
-                      <div className="text-sm text-gray-600">Next scheduled backup is in 2 hours.</div>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm">View</Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
-        <TabsContent value="backup" className="space-y-6">
+        <TabsContent value="backups" className="space-y-6">
           <Card className="border-0 shadow-md">
             <CardHeader>
               <CardTitle>Backup Management</CardTitle>
-              <CardDescription>Create and manage system backups</CardDescription>
+              <CardDescription>Create, schedule, and manage system backups</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Backup Settings */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="backupSchedule">Backup Schedule</Label>
-                  <Select 
-                    value={systemSettings.backupSchedule} 
-                    onValueChange={(value: any) => setSystemSettings({...systemSettings, backupSchedule: value})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="daily">Daily</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Auto Backup</Label>
+                  <Switch 
+                    checked={systemSettings.autoBackup}
+                    onCheckedChange={(checked) => 
+                      setSystemSettings(prev => ({ ...prev, autoBackup: checked }))
+                    }
+                  />
                 </div>
                 
-                <div className="flex items-center space-x-2">
-                  <Switch id="autoBackup" defaultChecked />
-                  <Label htmlFor="autoBackup">Enable Automatic Backups</Label>
+                <div className="space-y-2">
+                  <Label>Backup Frequency</Label>
+                  <select
+                    className="w-full p-2 border border-gray-300 rounded-md"
+                    value={systemSettings.backupFrequency}
+                    onChange={(e) => 
+                      setSystemSettings(prev => ({ 
+                        ...prev, 
+                        backupFrequency: e.target.value as any 
+                      }))
+                    }
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Next Backup</Label>
+                  <div className="p-2 bg-gray-50 rounded-md text-sm">
+                    {new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString()}
+                  </div>
                 </div>
               </div>
 
-              {/* Backup History */}
-              <div>
-                <h3 className="text-lg font-medium mb-4">Backup History</h3>
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Backup History</h3>
                 <div className="space-y-3">
-                  {backupRecords.map((backup) => (
+                  {backups.map((backup) => (
                     <div key={backup.id} className="flex items-center justify-between p-4 border rounded-lg">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3">
-                          <Badge variant={backup.status === 'completed' ? 'default' : backup.status === 'failed' ? 'destructive' : 'secondary'}>
+                          <Badge variant={backup.status === 'completed' ? 'default' : 'destructive'}>
                             {backup.status}
                           </Badge>
                           <span className="font-medium capitalize">{backup.type} Backup</span>
-                          <span className="text-gray-600">{backup.size}</span>
+                          <span className="text-sm text-gray-600">{backup.size.toFixed(1)} MB</span>
                         </div>
-                        <div className="text-sm text-gray-600 mt-1">{backup.date}</div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          {new Date(backup.date).toLocaleString()}
+                        </div>
                       </div>
                       
                       <div className="flex space-x-2">
-                        {backup.status === 'completed' && (
-                          <>
-                            <Button variant="outline" size="sm">
-                              <Download className="h-3 w-3 mr-1" />
-                              Download
-                            </Button>
-                            <Button variant="outline" size="sm">
-                              <RefreshCw className="h-3 w-3 mr-1" />
-                              Restore
-                            </Button>
-                          </>
-                        )}
-                        <Button variant="outline" size="sm" className="text-red-600 hover:bg-red-50">
-                          <Trash2 className="h-3 w-3" />
+                        <Button variant="outline" size="sm">
+                          <Download className="h-3 w-3 mr-1" />
+                          Download
+                        </Button>
+                        <Button variant="outline" size="sm">
+                          Restore
                         </Button>
                       </div>
                     </div>
@@ -816,151 +713,48 @@ const AdminControlPanel = () => {
 
         <TabsContent value="users" className="space-y-6">
           <Card className="border-0 shadow-md">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>User Management</CardTitle>
-                <CardDescription>Manage user accounts and permissions</CardDescription>
-              </div>
-              <Button>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add User
-              </Button>
+            <CardHeader>
+              <CardTitle>User Management</CardTitle>
+              <CardDescription>Manage system users and their access</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {systemUsers.map((user) => (
+                {users.map((user) => (
                   <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3">
                         <div>
-                          <div className="font-medium flex items-center space-x-2">
-                            <span>{user.name}</span>
-                            {!user.isActive && <Badge variant="destructive">Inactive</Badge>}
-                          </div>
+                          <div className="font-medium">{user.name}</div>
                           <div className="text-sm text-gray-600">{user.email}</div>
                         </div>
                         <Badge variant={user.role === 'admin' ? 'default' : 'outline'}>
                           {user.role}
                         </Badge>
+                        <Badge variant={user.isActive ? 'outline' : 'destructive'}>
+                          {user.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        Last login: {user.lastLogin} • Total logins: {user.totalLogins}
+                      <div className="text-xs text-gray-500 mt-1 space-x-4">
+                        {user.lastLogin && (
+                          <span>Last login: {user.lastLogin.toLocaleDateString()}</span>
+                        )}
+                        <span>Total logins: {user.totalLogins}</span>
+                        {user.lastIP && <span>IP: {user.lastIP}</span>}
                       </div>
                     </div>
                     
                     <div className="flex space-x-2">
-                      <Dialog open={isUserDialogOpen && selectedUser?.id === user.id} onOpenChange={setIsUserDialogOpen}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setSelectedUser(user)}
-                          >
-                            <Key className="h-3 w-3 mr-1" />
-                            Permissions
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
-                          <DialogHeader>
-                            <DialogTitle>User Permissions - {user.name}</DialogTitle>
-                            <DialogDescription>
-                              Configure access permissions for this user.
-                            </DialogDescription>
-                          </DialogHeader>
-                          {selectedUser && (
-                            <div className="space-y-4">
-                              {Object.entries(selectedUser.permissions).map(([module, perms]) => (
-                                <div key={module} className="space-y-2">
-                                  <Label className="text-sm font-medium capitalize">{module}</Label>
-                                  <div className="flex space-x-4">
-                                    <label className="flex items-center space-x-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={perms.read}
-                                        onChange={(e) => {
-                                          if (selectedUser) {
-                                            const newPermissions = {
-                                              ...selectedUser.permissions,
-                                              [module]: { ...perms, read: e.target.checked }
-                                            };
-                                            setSelectedUser({ ...selectedUser, permissions: newPermissions });
-                                          }
-                                        }}
-                                      />
-                                      <span className="text-sm">Read</span>
-                                    </label>
-                                    <label className="flex items-center space-x-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={perms.write}
-                                        onChange={(e) => {
-                                          if (selectedUser) {
-                                            const newPermissions = {
-                                              ...selectedUser.permissions,
-                                              [module]: { ...perms, write: e.target.checked }
-                                            };
-                                            setSelectedUser({ ...selectedUser, permissions: newPermissions });
-                                          }
-                                        }}
-                                      />
-                                      <span className="text-sm">Write</span>
-                                    </label>
-                                    <label className="flex items-center space-x-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={perms.delete}
-                                        onChange={(e) => {
-                                          if (selectedUser) {
-                                            const newPermissions = {
-                                              ...selectedUser.permissions,
-                                              [module]: { ...perms, delete: e.target.checked }
-                                            };
-                                            setSelectedUser({ ...selectedUser, permissions: newPermissions });
-                                          }
-                                        }}
-                                      />
-                                      <span className="text-sm">Delete</span>
-                                    </label>
-                                  </div>
-                                </div>
-                              ))}
-                              <div className="flex justify-end space-x-3">
-                                <Button variant="outline" onClick={() => setIsUserDialogOpen(false)}>
-                                  Cancel
-                                </Button>
-                                <Button onClick={() => updateUserPermissions(selectedUser.id, selectedUser.permissions)}>
-                                  Save Permissions
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </DialogContent>
-                      </Dialog>
-                      
+                      <Switch
+                        checked={user.isActive}
+                        onCheckedChange={(checked) => toggleUserStatus(user.id, checked)}
+                      />
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => toggleUserStatus(user.id)}
+                        onClick={() => resetUserPassword(user.id, user.email)}
                       >
-                        {user.isActive ? (
-                          <>
-                            <EyeOff className="h-3 w-3 mr-1" />
-                            Deactivate
-                          </>
-                        ) : (
-                          <>
-                            <Eye className="h-3 w-3 mr-1" />
-                            Activate
-                          </>
-                        )}
-                      </Button>
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-3 w-3" />
+                        <Key className="h-3 w-3 mr-1" />
+                        Reset Password
                       </Button>
                     </div>
                   </div>
@@ -974,7 +768,7 @@ const AdminControlPanel = () => {
           <Card className="border-0 shadow-md">
             <CardHeader>
               <CardTitle>System Settings</CardTitle>
-              <CardDescription>Configure business and system preferences</CardDescription>
+              <CardDescription>Configure system-wide settings and preferences</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -984,7 +778,7 @@ const AdminControlPanel = () => {
                     <Input
                       id="systemName"
                       value={systemSettings.systemName}
-                      onChange={(e) => setSystemSettings({...systemSettings, systemName: e.target.value})}
+                      onChange={(e) => setSystemSettings(prev => ({ ...prev, systemName: e.target.value }))}
                     />
                   </div>
                   
@@ -994,100 +788,73 @@ const AdminControlPanel = () => {
                       id="adminEmail"
                       type="email"
                       value={systemSettings.adminEmail}
-                      onChange={(e) => setSystemSettings({...systemSettings, adminEmail: e.target.value})}
+                      onChange={(e) => setSystemSettings(prev => ({ ...prev, adminEmail: e.target.value }))}
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="primaryPhone">Primary Phone</Label>
+                    <Label htmlFor="primaryPhone">Primary Contact</Label>
                     <Input
                       id="primaryPhone"
                       value={systemSettings.primaryPhone}
-                      onChange={(e) => setSystemSettings({...systemSettings, primaryPhone: e.target.value})}
+                      onChange={(e) => setSystemSettings(prev => ({ ...prev, primaryPhone: e.target.value }))}
                     />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="currency">Currency</Label>
-                    <Select 
-                      value={systemSettings.currency} 
-                      onValueChange={(value) => setSystemSettings({...systemSettings, currency: value})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="INR">Indian Rupee (₹)</SelectItem>
-                        <SelectItem value="USD">US Dollar ($)</SelectItem>
-                        <SelectItem value="EUR">Euro (€)</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="businessLocation">Business Location</Label>
-                    <Textarea
+                    <Input
                       id="businessLocation"
                       value={systemSettings.businessLocation}
-                      onChange={(e) => setSystemSettings({...systemSettings, businessLocation: e.target.value})}
-                      rows={3}
+                      onChange={(e) => setSystemSettings(prev => ({ ...prev, businessLocation: e.target.value }))}
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="dateFormat">Date Format</Label>
-                    <Select 
-                      value={systemSettings.dateFormat} 
-                      onValueChange={(value) => setSystemSettings({...systemSettings, dateFormat: value})}
+                    <Label htmlFor="currency">Currency</Label>
+                    <select
+                      id="currency"
+                      className="w-full p-2 border border-gray-300 rounded-md"
+                      value={systemSettings.currency}
+                      onChange={(e) => setSystemSettings(prev => ({ ...prev, currency: e.target.value }))}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
-                        <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
-                        <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <option value="INR">Indian Rupee (₹)</option>
+                      <option value="USD">US Dollar ($)</option>
+                      <option value="EUR">Euro (€)</option>
+                    </select>
                   </div>
 
                   <div>
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <Select 
-                      value={systemSettings.timezone} 
-                      onValueChange={(value) => setSystemSettings({...systemSettings, timezone: value})}
+                    <Label htmlFor="dateFormat">Date Format</Label>
+                    <select
+                      id="dateFormat"
+                      className="w-full p-2 border border-gray-300 rounded-md"
+                      value={systemSettings.dateFormat}
+                      onChange={(e) => setSystemSettings(prev => ({ ...prev, dateFormat: e.target.value }))}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Asia/Kolkata">Asia/Kolkata (IST)</SelectItem>
-                        <SelectItem value="UTC">UTC</SelectItem>
-                        <SelectItem value="America/New_York">America/New_York (EST)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                    </select>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Module Settings</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {Object.entries(systemSettings.enabledModules).map(([module, enabled]) => (
                     <div key={module} className="flex items-center space-x-2">
-                      <Switch 
+                      <Switch
                         id={module}
                         checked={enabled}
-                        onCheckedChange={(checked) => 
-                          setSystemSettings({
-                            ...systemSettings,
-                            enabledModules: {
-                              ...systemSettings.enabledModules,
-                              [module]: checked
-                            }
-                          })
+                        onCheckedChange={(checked) =>
+                          setSystemSettings(prev => ({
+                            ...prev,
+                            enabledModules: { ...prev.enabledModules, [module]: checked }
+                          }))
                         }
                       />
                       <Label htmlFor={module} className="capitalize">{module}</Label>
@@ -1108,74 +875,46 @@ const AdminControlPanel = () => {
         <TabsContent value="security" className="space-y-6">
           <Card className="border-0 shadow-md">
             <CardHeader>
-              <CardTitle>Security Settings</CardTitle>
-              <CardDescription>Manage system security and access controls</CardDescription>
+              <CardTitle>Security Center</CardTitle>
+              <CardDescription>Monitor and configure system security</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Authentication Settings</h3>
+                  <h3 className="text-lg font-medium">Session Management</h3>
                   <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <Switch 
-                        id="twoFactor"
-                        checked={systemSettings.twoFactorEnabled}
-                        onCheckedChange={(checked) => 
-                          setSystemSettings({...systemSettings, twoFactorEnabled: checked})
-                        }
-                      />
-                      <Label htmlFor="twoFactor">Enable Two-Factor Authentication</Label>
+                    <div className="flex items-center justify-between p-3 border rounded-lg">
+                      <span>Active Sessions</span>
+                      <Badge>3</Badge>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch id="sessionTimeout" defaultChecked />
-                      <Label htmlFor="sessionTimeout">Auto-logout inactive sessions</Label>
+                    <div className="flex items-center justify-between p-3 border rounded-lg">
+                      <span>Failed Login Attempts (24h)</span>
+                      <Badge variant="destructive">2</Badge>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch id="loginNotifications" defaultChecked />
-                      <Label htmlFor="loginNotifications">Email login notifications</Label>
+                    <div className="flex items-center justify-between p-3 border rounded-lg">
+                      <span>Password Changes (30d)</span>
+                      <Badge>1</Badge>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Password Policies</h3>
+                  <h3 className="text-lg font-medium">Security Settings</h3>
                   <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <Switch id="minLength" defaultChecked />
-                      <Label htmlFor="minLength">Minimum 8 characters</Label>
+                    <div className="flex items-center justify-between">
+                      <span>Require 2FA for Admin</span>
+                      <Switch />
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch id="uppercase" defaultChecked />
-                      <Label htmlFor="uppercase">Require uppercase letters</Label>
+                    <div className="flex items-center justify-between">
+                      <span>Auto-lock after inactivity</span>
+                      <Switch defaultChecked />
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch id="numbers" defaultChecked />
-                      <Label htmlFor="numbers">Require numbers</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Switch id="special" />
-                      <Label htmlFor="special">Require special characters</Label>
+                    <div className="flex items-center justify-between">
+                      <span>Email login notifications</span>
+                      <Switch defaultChecked />
                     </div>
                   </div>
                 </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Access Control</h3>
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="text-sm text-gray-700">
-                    <strong>Current Security Level:</strong> Standard
-                  </div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    All security features are properly configured and active.
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={updateSystemSettings}>
-                  Save Security Settings
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -1183,21 +922,9 @@ const AdminControlPanel = () => {
 
         <TabsContent value="logs" className="space-y-6">
           <Card className="border-0 shadow-md">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Activity Logs</CardTitle>
-                <CardDescription>System activity and user action logs</CardDescription>
-              </div>
-              <div className="flex space-x-2">
-                <Button variant="outline" onClick={() => exportLogs('csv')}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export CSV
-                </Button>
-                <Button variant="outline" onClick={() => exportLogs('pdf')}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export PDF
-                </Button>
-              </div>
+            <CardHeader>
+              <CardTitle>Activity Logs</CardTitle>
+              <CardDescription>System activity and audit trail</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -1206,10 +933,10 @@ const AdminControlPanel = () => {
                     <div className="flex-1">
                       <div className="flex items-center space-x-3">
                         <Badge variant={
-                          log.action === 'LOGIN' ? 'outline' :
-                          log.action === 'CREATE' ? 'default' :
-                          log.action === 'UPDATE' ? 'secondary' :
-                          log.action === 'DELETE' ? 'destructive' : 'outline'
+                          log.action === 'login' ? 'outline' :
+                          log.action === 'create' ? 'default' :
+                          log.action === 'update' ? 'secondary' :
+                          log.action === 'delete' ? 'destructive' : 'outline'
                         }>
                           {log.action}
                         </Badge>
@@ -1218,20 +945,19 @@ const AdminControlPanel = () => {
                       </div>
                       <div className="text-sm text-gray-600 mt-1">{log.details}</div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {new Date(log.timestamp).toLocaleString()} • IP: {log.ipAddress}
+                        {log.timestamp.toLocaleString()} • IP: {log.ipAddress}
                       </div>
                     </div>
-                    <Button variant="outline" size="sm">
-                      <Eye className="h-3 w-3 mr-1" />
-                      Details
-                    </Button>
                   </div>
                 ))}
               </div>
               
-              <div className="flex justify-center mt-6">
+              <div className="flex justify-between items-center mt-6">
                 <Button variant="outline">
-                  Load More Logs
+                  Export Logs
+                </Button>
+                <Button variant="outline">
+                  Load More
                 </Button>
               </div>
             </CardContent>
