@@ -1,38 +1,32 @@
 
-export const PRODUCT_TYPES = [
-  'Lehenga Fabric',
-  'Silk Thread',
-  'Cotton Fabric',
-  'Men\'s Kurta Fabric',
-  'Blouse Lace',
-  'Embroidery Thread',
-  'Zari Border',
-  'Dupatta Fabric',
-  'Lining Fabric',
-  'Buttons',
-  'Zippers',
-  'Elastic',
-  'Hooks & Eyes',
-  'Beads',
-  'Sequins',
-  'Mirror Work',
-  'Other'
-] as const;
-
-export type ProductType = typeof PRODUCT_TYPES[number];
-
 export const CATEGORIES = [
   'Fabrics',
   'Threads',
-  'Accessories',
+  'Buttons & Fasteners',
   'Embellishments',
-  'Hardware',
-  'Tools',
+  'Zippers',
+  'Patterns & Templates',
+  'Tools & Equipment',
+  'Accessories',
+  'Trims & Laces',
+  'Other Materials'
+];
+
+export const PRODUCT_TYPES = [
+  'Cotton',
+  'Silk',
+  'Chiffon',
+  'Georgette',
+  'Crepe',
+  'Velvet',
+  'Brocade',
+  'Net',
+  'Satin',
+  'Organza',
+  'Polyester',
+  'Rayon',
+  'Linen',
+  'Wool',
+  'Denim',
   'Other'
-] as const;
-
-export type Category = typeof CATEGORIES[number];
-
-// Export aliases for backward compatibility
-export const productTypes = PRODUCT_TYPES;
-export const productCategories = CATEGORIES;
+];

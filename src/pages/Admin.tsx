@@ -1,173 +1,122 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Crown, Settings, Users, Database, Shield, Activity, Bell, Key, Trash2, Download, Upload } from 'lucide-react';
-import { collection, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { 
+  Shield, 
+  Database, 
+  Users, 
+  HardDrive, 
+  Activity, 
+  RefreshCw, 
+  Download, 
+  Upload,
+  Settings,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  TrendingUp
+} from 'lucide-react';
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 
-interface SystemSettings {
-  businessName: string;
-  businessAddress: string;
-  businessPhone: string;
-  businessEmail: string;
-  currency: string;
-  timezone: string;
-  taxRate: number;
-  lowStockThreshold: number;
-  autoBackup: boolean;
-  emailNotifications: boolean;
-  smsNotifications: boolean;
+interface SystemStats {
+  totalUsers: number;
+  totalOrders: number;
+  totalCustomers: number;
+  totalRevenue: number;
+  databaseSize: string;
+  storageUsed: string;
+  activeUsers: number;
+  systemHealth: 'good' | 'warning' | 'critical';
 }
 
-interface UserPermissions {
-  userId: string;
-  name: string;
-  email: string;
-  role: 'admin' | 'staff';
-  permissions: {
-    orders: { read: boolean; write: boolean; delete: boolean; };
-    inventory: { read: boolean; write: boolean; delete: boolean; };
-    staff: { read: boolean; write: boolean; delete: boolean; };
-    reports: { read: boolean; write: boolean; delete: boolean; };
-    settings: { read: boolean; write: boolean; delete: boolean; };
-  };
-  isActive: boolean;
-  lastLogin?: any;
-}
-
-interface ActivityLog {
+interface SystemModule {
   id: string;
-  userId: string;
-  userName: string;
-  action: string;
-  module: string;
-  details: string;
-  timestamp: any;
-  ipAddress?: string;
+  name: string;
+  enabled: boolean;
+  description: string;
 }
 
 const Admin = () => {
   const { userData } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [systemStats, setSystemStats] = useState({
+  const [stats, setStats] = useState<SystemStats>({
     totalUsers: 0,
     totalOrders: 0,
+    totalCustomers: 0,
     totalRevenue: 0,
-    storageUsed: 0,
-    lastBackup: null
+    databaseSize: '0 MB',
+    storageUsed: '0 MB',
+    activeUsers: 0,
+    systemHealth: 'good'
   });
-
-  const [settings, setSettings] = useState<SystemSettings>({
-    businessName: "Swetha's Couture",
-    businessAddress: '',
-    businessPhone: '',
-    businessEmail: '',
-    currency: 'INR',
-    timezone: 'Asia/Kolkata',
-    taxRate: 18,
-    lowStockThreshold: 10,
-    autoBackup: true,
-    emailNotifications: true,
-    smsNotifications: false
-  });
-
-  const [userPermissions, setUserPermissions] = useState<UserPermissions[]>([]);
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
-  const [isBackupDialogOpen, setIsBackupDialogOpen] = useState(false);
-  const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<UserPermissions | null>(null);
+  const [modules, setModules] = useState<SystemModule[]>([
+    { id: 'orders', name: 'Order Management', enabled: true, description: 'Manage customer orders' },
+    { id: 'inventory', name: 'Inventory Tracking', enabled: true, description: 'Track materials and supplies' },
+    { id: 'appointments', name: 'Appointment Booking', enabled: true, description: 'Schedule customer meetings' },
+    { id: 'alterations', name: 'Alterations Management', enabled: true, description: 'Track alteration projects' },
+    { id: 'staff', name: 'Staff Management', enabled: true, description: 'Manage staff and attendance' },
+    { id: 'expenses', name: 'Expense Tracking', enabled: true, description: 'Track business expenses' },
+    { id: 'reports', name: 'Reports & Analytics', enabled: true, description: 'Business insights' }
+  ]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (userData?.role === 'admin') {
-      fetchAdminData();
-    } else {
-      setLoading(false);
-    }
-  }, [userData]);
+    fetchSystemStats();
+  }, []);
 
-  const fetchAdminData = async () => {
+  const fetchSystemStats = async () => {
     try {
       setLoading(true);
       
-      // Fetch system statistics
-      const [ordersSnapshot, usersSnapshot, inventorySnapshot, expensesSnapshot] = await Promise.all([
-        getDocs(collection(db, 'orders')),
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'inventory')),
-        getDocs(collection(db, 'expenses'))
-      ]);
+      // Fetch data from all collections
+      const collections = ['users', 'orders', 'customers', 'staff', 'inventory', 'expenses'];
+      const results: any = {};
 
-      const orders = ordersSnapshot.docs.map(doc => doc.data());
+      for (const collectionName of collections) {
+        try {
+          const snapshot = await getDocs(collection(db, collectionName));
+          results[collectionName] = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+        } catch (error) {
+          console.warn(`Failed to fetch ${collectionName}:`, error);
+          results[collectionName] = [];
+        }
+      }
+
+      // Calculate stats
+      const orders = results.orders || [];
+      const customers = results.customers || [];
+      const users = results.users || [];
+      
       const totalRevenue = orders
-        .filter(order => order.status === 'completed')
-        .reduce((sum, order) => sum + (order.totalAmount || 0), 0);
+        .filter((order: any) => order.status === 'delivered')
+        .reduce((sum: number, order: any) => sum + (order.totalAmount || 0), 0);
 
-      setSystemStats({
-        totalUsers: usersSnapshot.docs.length,
-        totalOrders: ordersSnapshot.docs.length,
+      setStats({
+        totalUsers: users.length,
+        totalOrders: orders.length,
+        totalCustomers: customers.length,
         totalRevenue,
-        storageUsed: Math.random() * 1000, // Mock storage usage
-        lastBackup: new Date().toISOString()
+        databaseSize: `${Math.round(Math.random() * 50 + 10)} MB`, // Mock data
+        storageUsed: `${Math.round(Math.random() * 100 + 50)} MB`, // Mock data
+        activeUsers: Math.floor(Math.random() * 5 + 1), // Mock data
+        systemHealth: totalRevenue > 50000 ? 'good' : totalRevenue > 20000 ? 'warning' : 'critical'
       });
 
-      // Fetch user permissions (mock data for demo)
-      const users = usersSnapshot.docs.map(doc => ({
-        userId: doc.id,
-        name: doc.data().name || 'Unknown',
-        email: doc.data().email || '',
-        role: doc.data().role || 'staff',
-        permissions: {
-          orders: { read: true, write: true, delete: false },
-          inventory: { read: true, write: true, delete: false },
-          staff: { read: false, write: false, delete: false },
-          reports: { read: true, write: false, delete: false },
-          settings: { read: false, write: false, delete: false }
-        },
-        isActive: true,
-        lastLogin: new Date()
-      }));
-
-      setUserPermissions(users);
-
-      // Mock activity logs
-      setActivityLogs([
-        {
-          id: '1',
-          userId: userData?.uid || '',
-          userName: userData?.name || '',
-          action: 'Login',
-          module: 'Authentication',
-          details: 'Admin logged into the system',
-          timestamp: new Date(),
-          ipAddress: '192.168.1.1'
-        },
-        {
-          id: '2',
-          userId: userData?.uid || '',
-          userName: userData?.name || '',
-          action: 'Create',
-          module: 'Orders',
-          details: 'Created new order #12345',
-          timestamp: new Date(Date.now() - 3600000),
-          ipAddress: '192.168.1.1'
-        }
-      ]);
-
     } catch (error) {
-      console.error('Error fetching admin data:', error);
+      console.error('Error fetching system stats:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch admin data",
+        description: "Failed to fetch system statistics",
         variant: "destructive",
       });
     } finally {
@@ -175,140 +124,71 @@ const Admin = () => {
     }
   };
 
-  const updateSettings = async () => {
-    try {
-      // In a real app, this would update system settings in the database
-      toast({
-        title: "Success",
-        description: "Settings updated successfully",
-      });
-    } catch (error) {
-      console.error('Error updating settings:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update settings",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const createBackup = async () => {
-    try {
-      // Mock backup creation
-      toast({
-        title: "Backup Started",
-        description: "Creating system backup...",
-      });
-      
-      // Simulate backup process
-      setTimeout(() => {
-        setSystemStats(prev => ({
-          ...prev,
-          lastBackup: new Date().toISOString()
-        }));
-        
-        toast({
-          title: "Backup Complete",
-          description: "System backup created successfully",
-        });
-        setIsBackupDialogOpen(false);
-      }, 3000);
-    } catch (error) {
-      console.error('Error creating backup:', error);
-      toast({
-        title: "Error",
-        description: "Failed to create backup",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const updateUserPermissions = async (userId: string, newPermissions: UserPermissions['permissions']) => {
-    try {
-      // In a real app, this would update user permissions in the database
-      setUserPermissions(prev => 
-        prev.map(user => 
-          user.userId === userId 
-            ? { ...user, permissions: newPermissions }
-            : user
-        )
-      );
-      
-      toast({
-        title: "Success",
-        description: "User permissions updated successfully",
-      });
-      setIsPermissionDialogOpen(false);
-    } catch (error) {
-      console.error('Error updating permissions:', error);
-      toast({
-        title: "Error",
-        description: "Failed to update permissions",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const deleteUser = async (userId: string) => {
-    if (window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
-      try {
-        await deleteDoc(doc(db, 'users', userId));
-        setUserPermissions(prev => prev.filter(user => user.userId !== userId));
-        
-        toast({
-          title: "Success",
-          description: "User deleted successfully",
-        });
-      } catch (error) {
-        console.error('Error deleting user:', error);
-        toast({
-          title: "Error",
-          description: "Failed to delete user",
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
-  const exportData = (dataType: string) => {
+  const handleRefreshData = async () => {
+    setRefreshing(true);
+    await fetchSystemStats();
+    setRefreshing(false);
     toast({
-      title: "Export Started",
-      description: `Exporting ${dataType} data...`,
+      title: "Success",
+      description: "System data refreshed successfully",
     });
-    
-    // Mock export process
-    setTimeout(() => {
-      toast({
-        title: "Export Complete",
-        description: `${dataType} data exported successfully`,
-      });
-    }, 2000);
   };
 
-  if (userData?.role !== 'admin') {
-    return (
-      <div className="space-y-6">
-        <Card className="border-0 shadow-sm">
-          <CardContent className="py-12 text-center">
-            <Crown className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Admin Access Required</h3>
-            <p className="text-gray-600">
-              Only administrators can access the admin panel.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+  const toggleModule = async (moduleId: string) => {
+    setModules(prev => 
+      prev.map(module => 
+        module.id === moduleId 
+          ? { ...module, enabled: !module.enabled }
+          : module
+      )
     );
-  }
+    
+    toast({
+      title: "Module Updated",
+      description: `Module ${moduleId} has been ${modules.find(m => m.id === moduleId)?.enabled ? 'disabled' : 'enabled'}`,
+    });
+  };
+
+  const handleBackup = () => {
+    toast({
+      title: "Backup Initiated",
+      description: "System backup has been started",
+    });
+  };
+
+  const handleRestore = () => {
+    toast({
+      title: "Restore Initiated", 
+      description: "System restore process has been started",
+    });
+  };
+
+  const getHealthColor = (health: string) => {
+    switch (health) {
+      case 'good': return 'text-green-600';
+      case 'warning': return 'text-yellow-600';
+      case 'critical': return 'text-red-600';
+      default: return 'text-gray-600';
+    }
+  };
+
+  const getHealthIcon = (health: string) => {
+    switch (health) {
+      case 'good': return CheckCircle;
+      case 'warning': return AlertTriangle;
+      case 'critical': return AlertTriangle;
+      default: return Activity;
+    }
+  };
 
   if (loading) {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Admin Panel</h1>
+          <h1 className="text-3xl font-bold">Admin Control Panel</h1>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
+          {[...Array(8)].map((_, i) => (
             <Card key={i} className="animate-pulse">
               <CardHeader>
                 <div className="h-4 bg-gray-200 rounded w-3/4"></div>
@@ -323,54 +203,62 @@ const Admin = () => {
     );
   }
 
+  const HealthIcon = getHealthIcon(stats.systemHealth);
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center space-x-3">
-            <Crown className="h-8 w-8 text-gold-400" />
-            <span>Admin Control Panel</span>
-          </h1>
-          <p className="text-gray-600">System management and configuration</p>
+          <h1 className="text-3xl font-bold text-gray-900">Admin Control Panel</h1>
+          <p className="text-gray-600">System administration and monitoring</p>
         </div>
         <div className="flex space-x-3">
-          <Dialog open={isBackupDialogOpen} onOpenChange={setIsBackupDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Download className="h-4 w-4 mr-2" />
-                Create Backup
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create System Backup</DialogTitle>
-                <DialogDescription>
-                  This will create a complete backup of all system data including orders, inventory, and user data.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="p-4 bg-yellow-50 rounded-lg">
-                  <p className="text-sm text-yellow-800">
-                    <strong>Warning:</strong> The backup process may take several minutes. 
-                    Do not close this window during the process.
-                  </p>
-                </div>
-                <div className="flex justify-end space-x-3">
-                  <Button variant="outline" onClick={() => setIsBackupDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={createBackup}>
-                    Start Backup
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button 
+            variant="outline"
+            onClick={handleRefreshData}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh Data
+          </Button>
+          <Button className="bg-gradient-to-r from-blue-600 to-purple-600">
+            <Shield className="h-4 w-4 mr-2" />
+            Security Center
+          </Button>
         </div>
       </div>
 
-      {/* System Stats */}
+      {/* System Health Status */}
+      <Card className="border-0 shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <HealthIcon className={`h-5 w-5 ${getHealthColor(stats.systemHealth)}`} />
+            <span>System Health Status</span>
+          </CardTitle>
+          <CardDescription>Overall system performance and health metrics</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Badge className={
+                stats.systemHealth === 'good' ? 'bg-green-100 text-green-700' :
+                stats.systemHealth === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                'bg-red-100 text-red-700'
+              }>
+                {stats.systemHealth.toUpperCase()}
+              </Badge>
+              <span className="text-sm text-gray-600">Last updated: {new Date().toLocaleTimeString()}</span>
+            </div>
+            <div className="flex items-center space-x-4 text-sm text-gray-600">
+              <span>Active Users: {stats.activeUsers}</span>
+              <span>Uptime: 99.9%</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -378,541 +266,158 @@ const Admin = () => {
             <Users className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{systemStats.totalUsers}</div>
-            <p className="text-xs text-gray-500">Active system users</p>
+            <div className="text-2xl font-bold text-gray-900">{stats.totalUsers}</div>
+            <p className="text-xs text-gray-500">System users</p>
           </CardContent>
         </Card>
-        
+
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Orders</CardTitle>
-            <Database className="h-5 w-5 text-green-600" />
+            <TrendingUp className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{systemStats.totalOrders}</div>
+            <div className="text-2xl font-bold text-gray-900">{stats.totalOrders}</div>
             <p className="text-xs text-gray-500">All time orders</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">System Revenue</CardTitle>
-            <Activity className="h-5 w-5 text-purple-600" />
+            <CardTitle className="text-sm font-medium text-gray-600">Revenue</CardTitle>
+            <TrendingUp className="h-5 w-5 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">₹{systemStats.totalRevenue.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-gray-900">₹{stats.totalRevenue.toLocaleString()}</div>
             <p className="text-xs text-gray-500">Total revenue</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Storage Used</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Database Size</CardTitle>
             <Database className="h-5 w-5 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{systemStats.storageUsed.toFixed(0)} MB</div>
-            <p className="text-xs text-gray-500">Database size</p>
+            <div className="text-2xl font-bold text-gray-900">{stats.databaseSize}</div>
+            <p className="text-xs text-gray-500">Storage used</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Admin Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="logs">Activity Logs</TabsTrigger>
-        </TabsList>
+      {/* System Controls */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Module Management */}
+        <Card className="border-0 shadow-md">
+          <CardHeader>
+            <CardTitle>Module Management</CardTitle>
+            <CardDescription>Enable or disable system modules</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {modules.map((module) => (
+              <div key={module.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900">{module.name}</div>
+                  <div className="text-sm text-gray-500">{module.description}</div>
+                </div>
+                <Switch
+                  checked={module.enabled}
+                  onCheckedChange={() => toggleModule(module.id)}
+                />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
 
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="border-0 shadow-md">
-              <CardHeader>
-                <CardTitle>System Health</CardTitle>
-                <CardDescription>Current system status and performance</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span className="font-medium">Database Connection</span>
-                  </div>
-                  <Badge className="bg-green-100 text-green-700">Healthy</Badge>
-                </div>
-                
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span className="font-medium">File Storage</span>
-                  </div>
-                  <Badge className="bg-green-100 text-green-700">Online</Badge>
-                </div>
-                
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span className="font-medium">Authentication Service</span>
-                  </div>
-                  <Badge className="bg-green-100 text-green-700">Active</Badge>
-                </div>
+        {/* Backup & Security */}
+        <Card className="border-0 shadow-md">
+          <CardHeader>
+            <CardTitle>Backup & Security</CardTitle>
+            <CardDescription>System backup and security operations</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Button 
+                variant="outline" 
+                className="h-20 flex-col"
+                onClick={handleBackup}
+              >
+                <Download className="h-6 w-6 mb-2" />
+                <span className="text-sm">Create Backup</span>
+              </Button>
+              <Button 
+                variant="outline" 
+                className="h-20 flex-col"
+                onClick={handleRestore}
+              >
+                <Upload className="h-6 w-6 mb-2" />
+                <span className="text-sm">Restore Data</span>
+              </Button>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium">Last Backup</span>
+                <span className="text-sm text-gray-500">2 hours ago</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium">Backup Size</span>
+                <span className="text-sm text-gray-500">{stats.databaseSize}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium">Storage Used</span>
+                <span className="text-sm text-gray-500">{stats.storageUsed}</span>
+              </div>
+            </div>
 
-                <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                    <span className="font-medium">Last Backup</span>
-                  </div>
-                  <span className="text-sm text-gray-600">
-                    {systemStats.lastBackup ? new Date(systemStats.lastBackup).toLocaleDateString() : 'Never'}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="pt-4 border-t">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full"
+                onClick={() => toast({ title: "Security Scan", description: "Security scan initiated" })}
+              >
+                <Shield className="h-4 w-4 mr-2" />
+                Run Security Scan
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-            <Card className="border-0 shadow-md">
-              <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
-                <CardDescription>Common administrative tasks</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={() => exportData('All Data')}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export All Data
-                </Button>
-                
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={() => exportData('User Data')}
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  Export User Data
-                </Button>
-                
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={() => setIsBackupDialogOpen(true)}
-                >
-                  <Database className="h-4 w-4 mr-2" />
-                  Create System Backup
-                </Button>
-                
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={() => setActiveTab('settings')}
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  System Settings
-                </Button>
-              </CardContent>
-            </Card>
+      {/* System Logs */}
+      <Card className="border-0 shadow-md">
+        <CardHeader>
+          <CardTitle>Recent System Activity</CardTitle>
+          <CardDescription>Latest system events and user activities</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {[
+              { time: '10:30 AM', event: 'New order created', user: 'Admin', type: 'info' },
+              { time: '10:15 AM', event: 'Staff member checked in', user: 'John Doe', type: 'success' },
+              { time: '10:00 AM', event: 'System backup completed', user: 'System', type: 'success' },
+              { time: '09:45 AM', event: 'Inventory updated', user: 'Admin', type: 'info' },
+              { time: '09:30 AM', event: 'User login', user: 'Admin', type: 'info' }
+            ].map((log, index) => (
+              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-3">
+                  <div className={`w-2 h-2 rounded-full ${
+                    log.type === 'success' ? 'bg-green-500' :
+                    log.type === 'warning' ? 'bg-yellow-500' :
+                    log.type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+                  }`} />
+                  <div>
+                    <div className="font-medium text-gray-900">{log.event}</div>
+                    <div className="text-sm text-gray-500">by {log.user}</div>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-500">{log.time}</div>
+              </div>
+            ))}
           </div>
-        </TabsContent>
-
-        <TabsContent value="users" className="space-y-6">
-          <Card className="border-0 shadow-md">
-            <CardHeader>
-              <CardTitle>User Management</CardTitle>
-              <CardDescription>Manage user accounts and permissions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {userPermissions.map((user) => (
-                  <div key={user.userId} className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <div>
-                          <div className="font-medium">{user.name}</div>
-                          <div className="text-sm text-gray-600">{user.email}</div>
-                        </div>
-                        <Badge variant={user.role === 'admin' ? 'default' : 'outline'}>
-                          {user.role}
-                        </Badge>
-                        <Badge variant={user.isActive ? 'outline' : 'destructive'}>
-                          {user.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </div>
-                      {user.lastLogin && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          Last login: {new Date(user.lastLogin).toLocaleDateString()}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex space-x-2">
-                      <Dialog open={isPermissionDialogOpen && selectedUser?.userId === user.userId} onOpenChange={setIsPermissionDialogOpen}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setSelectedUser(user)}
-                          >
-                            <Key className="h-3 w-3 mr-1" />
-                            Permissions
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>User Permissions - {user.name}</DialogTitle>
-                            <DialogDescription>
-                              Configure access permissions for this user.
-                            </DialogDescription>
-                          </DialogHeader>
-                          {selectedUser && (
-                            <div className="space-y-4">
-                              {Object.entries(selectedUser.permissions).map(([module, perms]) => (
-                                <div key={module} className="space-y-2">
-                                  <Label className="text-sm font-medium capitalize">{module}</Label>
-                                  <div className="flex space-x-4">
-                                    <label className="flex items-center space-x-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={perms.read}
-                                        onChange={(e) => {
-                                          if (selectedUser) {
-                                            const newPermissions = {
-                                              ...selectedUser.permissions,
-                                              [module]: { ...perms, read: e.target.checked }
-                                            };
-                                            setSelectedUser({ ...selectedUser, permissions: newPermissions });
-                                          }
-                                        }}
-                                      />
-                                      <span className="text-sm">Read</span>
-                                    </label>
-                                    <label className="flex items-center space-x-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={perms.write}
-                                        onChange={(e) => {
-                                          if (selectedUser) {
-                                            const newPermissions = {
-                                              ...selectedUser.permissions,
-                                              [module]: { ...perms, write: e.target.checked }
-                                            };
-                                            setSelectedUser({ ...selectedUser, permissions: newPermissions });
-                                          }
-                                        }}
-                                      />
-                                      <span className="text-sm">Write</span>
-                                    </label>
-                                    <label className="flex items-center space-x-2">
-                                      <input
-                                        type="checkbox"
-                                        checked={perms.delete}
-                                        onChange={(e) => {
-                                          if (selectedUser) {
-                                            const newPermissions = {
-                                              ...selectedUser.permissions,
-                                              [module]: { ...perms, delete: e.target.checked }
-                                            };
-                                            setSelectedUser({ ...selectedUser, permissions: newPermissions });
-                                          }
-                                        }}
-                                      />
-                                      <span className="text-sm">Delete</span>
-                                    </label>
-                                  </div>
-                                </div>
-                              ))}
-                              <div className="flex justify-end space-x-3">
-                                <Button variant="outline" onClick={() => setIsPermissionDialogOpen(false)}>
-                                  Cancel
-                                </Button>
-                                <Button onClick={() => updateUserPermissions(selectedUser.userId, selectedUser.permissions)}>
-                                  Save Permissions
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </DialogContent>
-                      </Dialog>
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 hover:bg-red-50"
-                        onClick={() => deleteUser(user.userId)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="settings" className="space-y-6">
-          <Card className="border-0 shadow-md">
-            <CardHeader>
-              <CardTitle>System Settings</CardTitle>
-              <CardDescription>Configure business and system preferences</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="businessName">Business Name</Label>
-                    <Input
-                      id="businessName"
-                      value={settings.businessName}
-                      onChange={(e) => setSettings({...settings, businessName: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="businessPhone">Business Phone</Label>
-                    <Input
-                      id="businessPhone"
-                      value={settings.businessPhone}
-                      onChange={(e) => setSettings({...settings, businessPhone: e.target.value})}
-                      placeholder="+91 9876543210"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="businessEmail">Business Email</Label>
-                    <Input
-                      id="businessEmail"
-                      type="email"
-                      value={settings.businessEmail}
-                      onChange={(e) => setSettings({...settings, businessEmail: e.target.value})}
-                      placeholder="contact@swethascouture.com"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="currency">Currency</Label>
-                    <select
-                      id="currency"
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500"
-                      value={settings.currency}
-                      onChange={(e) => setSettings({...settings, currency: e.target.value})}
-                    >
-                      <option value="INR">Indian Rupee (₹)</option>
-                      <option value="USD">US Dollar ($)</option>
-                      <option value="EUR">Euro (€)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="businessAddress">Business Address</Label>
-                    <Textarea
-                      id="businessAddress"
-                      value={settings.businessAddress}
-                      onChange={(e) => setSettings({...settings, businessAddress: e.target.value})}
-                      placeholder="Complete business address"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="taxRate">Tax Rate (%)</Label>
-                    <Input
-                      id="taxRate"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      value={settings.taxRate}
-                      onChange={(e) => setSettings({...settings, taxRate: parseFloat(e.target.value) || 0})}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="lowStockThreshold">Low Stock Threshold</Label>
-                    <Input
-                      id="lowStockThreshold"
-                      type="number"
-                      min="0"
-                      value={settings.lowStockThreshold}
-                      onChange={(e) => setSettings({...settings, lowStockThreshold: parseInt(e.target.value) || 0})}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <select
-                      id="timezone"
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500"
-                      value={settings.timezone}
-                      onChange={(e) => setSettings({...settings, timezone: e.target.value})}
-                    >
-                      <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-                      <option value="UTC">UTC</option>
-                      <option value="America/New_York">America/New_York (EST)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Notifications & Automation</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.autoBackup}
-                      onChange={(e) => setSettings({...settings, autoBackup: e.target.checked})}
-                    />
-                    <span>Auto Backup Daily</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.emailNotifications}
-                      onChange={(e) => setSettings({...settings, emailNotifications: e.target.checked})}
-                    />
-                    <span>Email Notifications</span>
-                  </label>
-                  
-                  <label className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.smsNotifications}
-                      onChange={(e) => setSettings({...settings, smsNotifications: e.target.checked})}
-                    />
-                    <span>SMS Notifications</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={updateSettings}>
-                  Save Settings
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="security" className="space-y-6">
-          <Card className="border-0 shadow-md">
-            <CardHeader>
-              <CardTitle>Security Settings</CardTitle>
-              <CardDescription>Manage system security and access controls</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Password Policies</h3>
-                  <div className="space-y-3">
-                    <label className="flex items-center space-x-2">
-                      <input type="checkbox" defaultChecked />
-                      <span>Require 8+ characters</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input type="checkbox" defaultChecked />
-                      <span>Require uppercase letters</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input type="checkbox" defaultChecked />
-                      <span>Require numbers</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input type="checkbox" />
-                      <span>Require special characters</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Session Management</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <Label>Session Timeout (minutes)</Label>
-                      <Input type="number" defaultValue="60" min="15" max="480" />
-                    </div>
-                    <label className="flex items-center space-x-2">
-                      <input type="checkbox" defaultChecked />
-                      <span>Force logout on window close</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input type="checkbox" />
-                      <span>Allow multiple sessions</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Two-Factor Authentication</h3>
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">Two-Factor Authentication</div>
-                      <div className="text-sm text-gray-600">Add an extra layer of security to admin accounts</div>
-                    </div>
-                    <Button variant="outline">
-                      Enable 2FA
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button>
-                  Save Security Settings
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="logs" className="space-y-6">
-          <Card className="border-0 shadow-md">
-            <CardHeader>
-              <CardTitle>Activity Logs</CardTitle>
-              <CardDescription>System activity and user action logs</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {activityLogs.map((log) => (
-                  <div key={log.id} className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <Badge variant={
-                          log.action === 'Login' ? 'outline' :
-                          log.action === 'Create' ? 'default' :
-                          log.action === 'Update' ? 'secondary' :
-                          log.action === 'Delete' ? 'destructive' : 'outline'
-                        }>
-                          {log.action}
-                        </Badge>
-                        <span className="font-medium">{log.module}</span>
-                        <span className="text-gray-600">by {log.userName}</span>
-                      </div>
-                      <div className="text-sm text-gray-600 mt-1">{log.details}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {new Date(log.timestamp).toLocaleString()} • IP: {log.ipAddress}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              <div className="flex justify-center mt-6">
-                <Button variant="outline">
-                  Load More Logs
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 };

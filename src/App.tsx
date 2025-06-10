@@ -12,16 +12,14 @@ import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import StaffDashboard from "@/pages/StaffDashboard";
 import Orders from "@/pages/Orders";
+import Customers from "@/pages/Customers";
 import Inventory from "@/pages/Inventory";
 import Appointments from "@/pages/Appointments";
 import Alterations from "@/pages/Alterations";
-import Customers from "@/pages/Customers";
 import Staff from "@/pages/Staff";
 import Expenses from "@/pages/Expenses";
-import AdminExpenses from "@/pages/AdminExpenses";
 import Reports from "@/pages/Reports";
 import Admin from "@/pages/Admin";
-import AdminControlPanel from "@/pages/AdminControlPanel";
 import Settings from "@/pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -59,6 +57,13 @@ const App = () => (
                   </Layout>
                 </ProtectedRoute>
               } />
+              <Route path="/customers" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Customers />
+                  </Layout>
+                </ProtectedRoute>
+              } />
               <Route path="/inventory" element={
                 <ProtectedRoute>
                   <Layout>
@@ -80,13 +85,6 @@ const App = () => (
                   </Layout>
                 </ProtectedRoute>
               } />
-              <Route path="/customers" element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Customers />
-                  </Layout>
-                </ProtectedRoute>
-              } />
               <Route path="/staff" element={
                 <ProtectedRoute adminOnly>
                   <Layout>
@@ -101,13 +99,6 @@ const App = () => (
                   </Layout>
                 </ProtectedRoute>
               } />
-              <Route path="/admin/expenses" element={
-                <ProtectedRoute adminOnly>
-                  <Layout>
-                    <AdminExpenses />
-                  </Layout>
-                </ProtectedRoute>
-              } />
               <Route path="/reports" element={
                 <ProtectedRoute adminOnly>
                   <Layout>
@@ -119,13 +110,6 @@ const App = () => (
                 <ProtectedRoute adminOnly>
                   <Layout>
                     <Admin />
-                  </Layout>
-                </ProtectedRoute>
-              } />
-              <Route path="/admin/control-panel" element={
-                <ProtectedRoute adminOnly>
-                  <Layout>
-                    <AdminControlPanel />
                   </Layout>
                 </ProtectedRoute>
               } />

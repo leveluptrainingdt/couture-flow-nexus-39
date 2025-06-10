@@ -17,7 +17,7 @@ import {
   X,
   User,
   Shield,
-  Clock
+  Scissors
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
@@ -37,12 +37,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Customers', href: '/customers', icon: User, access: ['admin', 'staff'] },
     { name: 'Inventory', href: '/inventory', icon: Package, access: ['admin', 'staff'] },
     { name: 'Appointments', href: '/appointments', icon: Calendar, access: ['admin', 'staff'] },
-    { name: 'Alterations', href: '/alterations', icon: Settings, access: ['admin', 'staff'] },
+    { name: 'Alterations', href: '/alterations', icon: Scissors, access: ['admin', 'staff'] },
     { name: 'Staff', href: '/staff', icon: Users, access: ['admin'] },
     { name: 'Expenses', href: '/expenses', icon: DollarSign, access: ['admin'] },
     { name: 'Reports', href: '/reports', icon: BarChart3, access: ['admin'] },
-    { name: 'Admin Panel', href: '/admin', icon: Crown, access: ['admin'] },
-    { name: 'Control Panel', href: '/admin/control-panel', icon: Shield, access: ['admin'] },
+    { name: 'Admin Panel', href: '/admin', icon: Shield, access: ['admin'] },
     { name: 'Settings', href: '/admin/settings', icon: Settings, access: ['admin'] },
   ];
 
@@ -52,7 +51,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Customers', href: '/customers', icon: User, access: ['staff'] },
     { name: 'Inventory', href: '/inventory', icon: Package, access: ['staff'] },
     { name: 'Appointments', href: '/appointments', icon: Calendar, access: ['staff'] },
-    { name: 'Alterations', href: '/alterations', icon: Clock, access: ['staff'] },
+    { name: 'Alterations', href: '/alterations', icon: Scissors, access: ['staff'] },
   ];
 
   const navigation = userData?.role === 'admin' ? adminNavigation : staffNavigation;
