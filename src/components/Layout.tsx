@@ -15,7 +15,8 @@ import {
   Crown,
   Menu,
   X,
-  User
+  User,
+  Shield
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
@@ -40,6 +41,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Expenses', href: '/expenses', icon: DollarSign, access: ['admin'] },
     { name: 'Reports', href: '/reports', icon: BarChart3, access: ['admin'] },
     { name: 'Admin Panel', href: '/admin', icon: Crown, access: ['admin'] },
+    { name: 'Control Panel', href: '/admin/control-panel', icon: Shield, access: ['admin'] },
   ];
 
   const filteredNavigation = navigation.filter(item => 
