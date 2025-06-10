@@ -151,18 +151,29 @@ const AdminControlPanel = () => {
       ]);
 
       const orders = ordersSnapshot.docs.map(doc => doc.data());
-      const users = usersSnapshot.docs.map(doc => ({
+      const usersData = usersSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
+      })) as Array<{
+        id: string;
+        name?: string;
+        email?: string;
+        role?: string;
+        isActive?: boolean;
+        lastLogin?: any;
+        totalLogins?: number;
+        lastIP?: string;
+      }>;
 
       const totalRevenue = orders
         .filter(order => order.status === 'completed')
         .reduce((sum, order) => sum + (order.totalAmount || 0), 0);
 
-      const activeUsers = users.filter(user => {
+      const activeUsers = usersData.filter(user => {
         if (user.lastLogin) {
-          const lastLogin = new Date(user.lastLogin.seconds * 1000);
+          const lastLogin = user.lastLogin.seconds ? 
+            new Date(user.lastLogin.seconds * 1000) : 
+            new Date(user.lastLogin);
           const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
           return lastLogin > weekAgo;
         }
@@ -170,7 +181,7 @@ const AdminControlPanel = () => {
       }).length;
 
       setMetrics({
-        totalUsers: users.length,
+        totalUsers: usersData.length,
         activeUsers,
         totalOrders: orders.length,
         systemRevenue: totalRevenue,
@@ -179,14 +190,18 @@ const AdminControlPanel = () => {
         systemUptime: `${Math.floor(Math.random() * 30) + 1} days`
       });
 
-      // Set users data
-      setUsers(users.map(user => ({
+      // Set users data with proper type handling
+      setUsers(usersData.map(user => ({
         id: user.id,
         name: user.name || 'Unknown',
         email: user.email || '',
-        role: user.role || 'staff',
+        role: (user.role as 'admin' | 'staff') || 'staff',
         isActive: user.isActive !== false,
-        lastLogin: user.lastLogin ? new Date(user.lastLogin.seconds * 1000) : undefined,
+        lastLogin: user.lastLogin ? (
+          user.lastLogin.seconds ? 
+            new Date(user.lastLogin.seconds * 1000) : 
+            new Date(user.lastLogin)
+        ) : undefined,
         totalLogins: user.totalLogins || 0,
         lastIP: user.lastIP || '192.168.1.1'
       })));
