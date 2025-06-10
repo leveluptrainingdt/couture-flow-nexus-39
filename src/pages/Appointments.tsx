@@ -673,7 +673,7 @@ const Appointments = () => {
                             <User className="h-4 w-4 text-purple-600" />
                             <span>{appointment.clientName}</span>
                             {isUpcomingSoon(appointment) && (
-                              <AlertCircle className="h-4 w-4 text-orange-500" title="Appointment within 1 hour" />
+                              <AlertCircle className="h-4 w-4 text-orange-500" />
                             )}
                           </div>
                           <div className="text-sm text-gray-600 flex items-center space-x-2">

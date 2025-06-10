@@ -32,3 +32,7 @@ export const CATEGORIES = [
 ] as const;
 
 export type Category = typeof CATEGORIES[number];
+
+// Export aliases for backward compatibility
+export const productTypes = PRODUCT_TYPES;
+export const productCategories = CATEGORIES;

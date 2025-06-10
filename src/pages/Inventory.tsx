@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Search, Package, TrendingUp, AlertTriangle, Phone, MessageCircle, Edit, Minus, Eye } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Plus, Search, Package, TrendingUp, AlertTriangle, Phone, MessageCircle, Edit, Minus, Eye, Trash2 } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
@@ -25,9 +27,10 @@ interface InventoryItem {
   supplier: {
     name: string;
     phone: string;
-    email?: string; // Made optional
+    email?: string;
   };
   imageUrl?: string;
+  description?: string;
   status: 'In Stock' | 'Low Stock' | 'Out of Stock';
   totalValue: number;
   createdAt: any;
@@ -56,7 +59,8 @@ const Inventory = () => {
       phone: '',
       email: ''
     },
-    imageUrl: ''
+    imageUrl: '',
+    description: ''
   });
 
   useEffect(() => {
@@ -96,7 +100,7 @@ const Inventory = () => {
         supplier: {
           name: formData.supplier.name,
           phone: formData.supplier.phone,
-          ...(formData.supplier.email && { email: formData.supplier.email }) // Only include email if provided
+          ...(formData.supplier.email && { email: formData.supplier.email })
         },
         status,
         totalValue,
@@ -145,7 +149,8 @@ const Inventory = () => {
         phone: '',
         email: ''
       },
-      imageUrl: ''
+      imageUrl: '',
+      description: ''
     });
   };
 
@@ -159,7 +164,8 @@ const Inventory = () => {
       minStock: item.minStock,
       unitPrice: item.unitPrice,
       supplier: item.supplier,
-      imageUrl: item.imageUrl || ''
+      imageUrl: item.imageUrl || '',
+      description: item.description || ''
     });
     setIsDialogOpen(true);
   };
@@ -302,17 +308,13 @@ const Inventory = () => {
                 <div>
                   <Label htmlFor="category">Category</Label>
                   <Select
-                    id="category"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                     value={formData.category}
-                    onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    required
+                    onValueChange={(value) => setFormData({...formData, category: value})}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Select category</SelectItem>
                       {productCategories.map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
@@ -324,17 +326,13 @@ const Inventory = () => {
               <div>
                 <Label htmlFor="type">Product Type</Label>
                 <Select
-                  id="type"
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   value={formData.type}
-                  onChange={(e) => setFormData({...formData, type: e.target.value})}
-                  required
+                  onValueChange={(value) => setFormData({...formData, type: value})}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Select type</SelectItem>
                     {productTypes.map(type => (
                       <SelectItem key={type} value={type}>{type}</SelectItem>
                     ))}
@@ -599,7 +597,7 @@ const Inventory = () => {
                         {item.imageUrl && (
                           <div 
                             className="w-10 h-10 rounded-md bg-gray-100 flex items-center justify-center cursor-pointer hover:bg-gray-200"
-                            onClick={() => setSelectedImage(item.imageUrl!)}
+                            onClick={() => setImagePreview(item.imageUrl!)}
                           >
                             <Eye className="h-4 w-4 text-gray-500" />
                           </div>
