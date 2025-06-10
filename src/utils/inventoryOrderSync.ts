@@ -1,10 +1,9 @@
 
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { ProductType } from './productTypes';
 
 interface OrderItem {
-  type: ProductType;
+  type: string;
   quantity: number;
 }
 

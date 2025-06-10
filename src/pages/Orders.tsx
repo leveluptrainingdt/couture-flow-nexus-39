@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -167,11 +166,11 @@ const Orders = () => {
       status: order.status,
       deliveryDate: order.deliveryDate,
       notes: order.notes || '',
-      measurements: order.measurements || {
-        chest: '',
-        waist: '',
-        length: '',
-        shoulder: ''
+      measurements: {
+        chest: order.measurements?.chest || '',
+        waist: order.measurements?.waist || '',
+        length: order.measurements?.length || '',
+        shoulder: order.measurements?.shoulder || ''
       }
     });
     setIsDialogOpen(true);
