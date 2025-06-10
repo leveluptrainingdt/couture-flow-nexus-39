@@ -13,6 +13,7 @@ import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
+import { uploadToCloudinary } from '@/utils/cloudinaryConfig';
 
 interface StaffMember {
   id: string;
@@ -131,7 +132,7 @@ const Staff = () => {
         phone: formData.phone,
         role: 'staff',
         position: formData.position,
-        salary: formData.salary,
+        salary: formData.salary || 0,
         startDate: formData.startDate,
         isActive: true,
         ...(editingStaff ? { updatedAt: serverTimestamp() } : { createdAt: serverTimestamp() })
@@ -159,7 +160,11 @@ const Staff = () => {
             });
           } catch (authError: any) {
             console.error('Error creating auth user:', authError);
-            // Continue with staff creation even if auth fails
+            toast({
+              title: "Warning",
+              description: "Staff added but login credentials creation failed",
+              variant: "destructive",
+            });
           }
         }
 
@@ -199,12 +204,12 @@ const Staff = () => {
   const handleEdit = (staffMember: StaffMember) => {
     setEditingStaff(staffMember);
     setFormData({
-      name: staffMember.name,
-      email: staffMember.email,
-      phone: staffMember.phone,
-      position: staffMember.position,
-      salary: staffMember.salary,
-      startDate: staffMember.startDate,
+      name: staffMember.name || '',
+      email: staffMember.email || '',
+      phone: staffMember.phone || '',
+      position: staffMember.position || '',
+      salary: staffMember.salary || 0,
+      startDate: staffMember.startDate || '',
       password: ''
     });
     setIsDialogOpen(true);
@@ -233,29 +238,18 @@ const Staff = () => {
   const uploadProfileImage = async (file: File, staffId: string) => {
     setUploadingImage(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', 'swetha');
-
-      const response = await fetch('https://api.cloudinary.com/v1_1/dvmrhs2ek/image/upload', {
-        method: 'POST',
-        body: formData
+      const imageUrl = await uploadToCloudinary(file);
+      
+      await updateDoc(doc(db, 'staff', staffId), {
+        profileImage: imageUrl,
+        updatedAt: serverTimestamp()
       });
 
-      const data = await response.json();
-      
-      if (data.secure_url) {
-        await updateDoc(doc(db, 'staff', staffId), {
-          profileImage: data.secure_url,
-          updatedAt: serverTimestamp()
-        });
-
-        toast({
-          title: "Success",
-          description: "Profile image uploaded successfully",
-        });
-        fetchStaff();
-      }
+      toast({
+        title: "Success",
+        description: "Profile image uploaded successfully",
+      });
+      fetchStaff();
     } catch (error) {
       console.error('Error uploading image:', error);
       toast({
@@ -269,9 +263,9 @@ const Staff = () => {
   };
 
   const filteredStaff = staff.filter(member =>
-    member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.position.toLowerCase().includes(searchTerm.toLowerCase())
+    (member.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (member.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (member.position || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getAttendanceStatus = (staffId: string) => {
@@ -304,6 +298,7 @@ const Staff = () => {
     );
   }
 
+  // Safe calculations with null checks
   const totalStaff = staff.length;
   const activeStaff = staff.filter(member => member.isActive).length;
   const presentToday = attendance.filter(att => att.status === 'present' || att.checkIn).length;
@@ -554,14 +549,14 @@ const Staff = () => {
                           </Button>
                         </div>
                         <div>
-                          <div className="font-medium">{member.name}</div>
-                          <div className="text-sm text-gray-500">{member.email}</div>
+                          <div className="font-medium">{member.name || 'N/A'}</div>
+                          <div className="text-sm text-gray-500">{member.email || 'N/A'}</div>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{member.phone}</TableCell>
-                    <TableCell>{member.position}</TableCell>
-                    <TableCell>₹{member.salary.toLocaleString()}</TableCell>
+                    <TableCell>{member.phone || 'N/A'}</TableCell>
+                    <TableCell>{member.position || 'N/A'}</TableCell>
+                    <TableCell>₹{(member.salary || 0).toLocaleString()}</TableCell>
                     <TableCell>
                       <Badge variant={member.isActive ? "default" : "secondary"}>
                         {member.isActive ? 'Active' : 'Inactive'}

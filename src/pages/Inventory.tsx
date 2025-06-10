@@ -29,7 +29,7 @@ interface InventoryItem {
   supplier: {
     name: string;
     phone: string;
-    email?: string; // Made optional
+    email?: string;
   };
   location: string;
   notes?: string;
@@ -94,17 +94,17 @@ const Inventory = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const totalValue = formData.quantity * formData.costPerUnit;
+      const totalValue = (formData.quantity || 0) * (formData.costPerUnit || 0);
       
       const itemData = {
         name: formData.name,
         category: formData.category,
         type: formData.type,
-        quantity: formData.quantity,
+        quantity: formData.quantity || 0,
         unit: formData.unit,
-        costPerUnit: formData.costPerUnit,
+        costPerUnit: formData.costPerUnit || 0,
         totalValue,
-        reorderLevel: formData.reorderLevel,
+        reorderLevel: formData.reorderLevel || 0,
         supplier: {
           name: formData.supplierName,
           phone: formData.supplierPhone,
@@ -164,17 +164,17 @@ const Inventory = () => {
   const handleEdit = (item: InventoryItem) => {
     setEditingItem(item);
     setFormData({
-      name: item.name,
-      category: item.category,
-      type: item.type,
-      quantity: item.quantity,
-      unit: item.unit,
-      costPerUnit: item.costPerUnit,
-      reorderLevel: item.reorderLevel,
-      supplierName: item.supplier.name,
-      supplierPhone: item.supplier.phone,
-      supplierEmail: item.supplier.email || '',
-      location: item.location,
+      name: item.name || '',
+      category: item.category || '',
+      type: item.type || '',
+      quantity: item.quantity || 0,
+      unit: item.unit || 'pieces',
+      costPerUnit: item.costPerUnit || 0,
+      reorderLevel: item.reorderLevel || 0,
+      supplierName: item.supplier?.name || '',
+      supplierPhone: item.supplier?.phone || '',
+      supplierEmail: item.supplier?.email || '',
+      location: item.location || '',
       notes: item.notes || ''
     });
     setIsDialogOpen(true);
@@ -201,15 +201,22 @@ const Inventory = () => {
   };
 
   const filteredItems = items.filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.supplier.name.toLowerCase().includes(searchTerm.toLowerCase())
+    (item.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.category || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.type || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const lowStockItems = items.filter(item => item.quantity <= item.reorderLevel);
-  const totalValue = items.reduce((sum, item) => sum + item.totalValue, 0);
-  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+  // Safe calculations with proper null checks
+  const lowStockItems = items.filter(item => 
+    (item.quantity || 0) <= (item.reorderLevel || 0)
+  );
+  const totalValue = items.reduce((sum, item) => 
+    sum + ((item.totalValue || 0)), 0
+  );
+  const totalItems = items.reduce((sum, item) => 
+    sum + (item.quantity || 0), 0
+  );
 
   if (loading) {
     return (
@@ -532,32 +539,32 @@ const Inventory = () => {
                   <TableRow key={item.id}>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{item.name}</div>
-                        <div className="text-sm text-gray-500">{item.location}</div>
+                        <div className="font-medium">{item.name || 'N/A'}</div>
+                        <div className="text-sm text-gray-500">{item.location || 'N/A'}</div>
                       </div>
                     </TableCell>
-                    <TableCell>{item.category}</TableCell>
-                    <TableCell>{item.type}</TableCell>
+                    <TableCell>{item.category || 'N/A'}</TableCell>
+                    <TableCell>{item.type || 'N/A'}</TableCell>
                     <TableCell>
                       <div>
-                        <div>{item.quantity} {item.unit}</div>
-                        {item.quantity <= item.reorderLevel && (
+                        <div>{(item.quantity || 0)} {item.unit || 'units'}</div>
+                        {(item.quantity || 0) <= (item.reorderLevel || 0) && (
                           <Badge variant="destructive" className="text-xs">Low Stock</Badge>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>₹{item.costPerUnit}</TableCell>
-                    <TableCell>₹{item.totalValue.toLocaleString()}</TableCell>
+                    <TableCell>₹{(item.costPerUnit || 0).toFixed(2)}</TableCell>
+                    <TableCell>₹{(item.totalValue || 0).toLocaleString()}</TableCell>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{item.supplier.name}</div>
-                        <div className="text-sm text-gray-500">{item.supplier.phone}</div>
+                        <div className="font-medium">{item.supplier?.name || 'N/A'}</div>
+                        <div className="text-sm text-gray-500">{item.supplier?.phone || 'N/A'}</div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {item.quantity <= item.reorderLevel ? (
+                      {(item.quantity || 0) <= (item.reorderLevel || 0) ? (
                         <Badge variant="destructive">Reorder</Badge>
-                      ) : item.quantity <= item.reorderLevel * 2 ? (
+                      ) : (item.quantity || 0) <= ((item.reorderLevel || 0) * 2) ? (
                         <Badge variant="outline" className="text-orange-600 border-orange-200">Low</Badge>
                       ) : (
                         <Badge variant="outline" className="text-green-600 border-green-200">Good</Badge>

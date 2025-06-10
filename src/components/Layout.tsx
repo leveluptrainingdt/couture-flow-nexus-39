@@ -1,163 +1,239 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLocation, Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { 
   LayoutDashboard, 
-  Package, 
-  ShoppingCart, 
-  Calendar, 
   Users, 
+  ShoppingBag, 
+  Package, 
+  Calendar, 
+  Scissors, 
+  UserPlus, 
   DollarSign, 
   BarChart3, 
-  Settings,
-  LogOut,
-  Crown,
-  Menu,
+  Settings, 
+  LogOut, 
+  Menu, 
   X,
-  User,
   Shield,
-  Scissors
+  ChevronDown,
+  User
 } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { signOut } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
+import { toast } from '@/hooks/use-toast';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { userData, logout } = useAuth();
+const Layout = ({ children }: LayoutProps) => {
+  const { userData } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const adminNavigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, access: ['admin'] },
-    { name: 'Orders', href: '/orders', icon: ShoppingCart, access: ['admin', 'staff'] },
-    { name: 'Customers', href: '/customers', icon: User, access: ['admin', 'staff'] },
-    { name: 'Inventory', href: '/inventory', icon: Package, access: ['admin', 'staff'] },
-    { name: 'Appointments', href: '/appointments', icon: Calendar, access: ['admin', 'staff'] },
-    { name: 'Alterations', href: '/alterations', icon: Scissors, access: ['admin', 'staff'] },
-    { name: 'Staff', href: '/staff', icon: Users, access: ['admin'] },
-    { name: 'Expenses', href: '/expenses', icon: DollarSign, access: ['admin'] },
-    { name: 'Reports', href: '/reports', icon: BarChart3, access: ['admin'] },
-    { name: 'Admin Panel', href: '/admin', icon: Shield, access: ['admin'] },
-    { name: 'Settings', href: '/admin/settings', icon: Settings, access: ['admin'] },
+  const isAdmin = userData?.role === 'admin';
+  const isStaff = userData?.role === 'staff';
+
+  const adminMenuItems = [
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'Orders', href: '/orders', icon: ShoppingBag },
+    { name: 'Customers', href: '/customers', icon: Users },
+    { name: 'Inventory', href: '/inventory', icon: Package },
+    { name: 'Appointments', href: '/appointments', icon: Calendar },
+    { name: 'Alterations', href: '/alterations', icon: Scissors },
+    { name: 'Staff', href: '/staff', icon: UserPlus },
+    { name: 'Expenses', href: '/expenses', icon: DollarSign },
+    { name: 'Reports', href: '/reports', icon: BarChart3 },
+    { name: 'Admin Panel', href: '/admin', icon: Shield },
+    { name: 'Settings', href: '/admin/settings', icon: Settings },
   ];
 
-  const staffNavigation = [
-    { name: 'Dashboard', href: '/staff/dashboard', icon: LayoutDashboard, access: ['staff'] },
-    { name: 'Orders', href: '/orders', icon: ShoppingCart, access: ['staff'] },
-    { name: 'Customers', href: '/customers', icon: User, access: ['staff'] },
-    { name: 'Inventory', href: '/inventory', icon: Package, access: ['staff'] },
-    { name: 'Appointments', href: '/appointments', icon: Calendar, access: ['staff'] },
-    { name: 'Alterations', href: '/alterations', icon: Scissors, access: ['staff'] },
+  const staffMenuItems = [
+    { name: 'Dashboard', href: '/staff/dashboard', icon: LayoutDashboard },
+    { name: 'Orders', href: '/orders', icon: ShoppingBag },
+    { name: 'Customers', href: '/customers', icon: Users },
+    { name: 'Inventory', href: '/inventory', icon: Package },
+    { name: 'Appointments', href: '/appointments', icon: Calendar },
+    { name: 'Alterations', href: '/alterations', icon: Scissors },
   ];
 
-  const navigation = userData?.role === 'admin' ? adminNavigation : staffNavigation;
-
-  const filteredNavigation = navigation.filter(item => 
-    item.access.includes(userData?.role || 'staff')
-  );
+  const menuItems = isAdmin ? adminMenuItems : staffMenuItems;
 
   const handleLogout = async () => {
     try {
-      await logout();
+      await signOut(auth);
+      navigate('/login');
+      toast({
+        title: "Success",
+        description: "Logged out successfully",
+      });
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('Error signing out:', error);
+      toast({
+        title: "Error",
+        description: "Failed to log out",
+        variant: "destructive",
+      });
     }
   };
 
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
+  };
+
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Mobile sidebar overlay */}
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Mobile overlay */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-20 bg-black bg-opacity-50 lg:hidden"
+          onClick={closeSidebar}
         />
       )}
 
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gradient-to-b from-purple-900 to-blue-900 transform transition-transform duration-300 lg:translate-x-0 ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
-        <div className="flex items-center justify-between h-16 px-6 border-b border-white/10">
-          <div className="flex items-center space-x-3">
-            <Crown className="h-8 w-8 text-gold-400" />
-            <span className="text-xl font-bold text-white">Swetha's</span>
+      <div className={`
+        fixed inset-y-0 left-0 z-30 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex flex-col h-full">
+          {/* Logo Section */}
+          <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">SC</span>
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-900">Swetha's Couture</h1>
+                <p className="text-xs text-gray-500">{isAdmin ? 'Admin Panel' : 'Staff Panel'}</p>
+              </div>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="lg:hidden"
+              onClick={closeSidebar}
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="lg:hidden text-white hover:bg-white/10"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
 
-        <nav className="mt-8 px-4 pb-20">
-          <ul className="space-y-2">
-            {filteredNavigation.map((item) => {
+          {/* Navigation Menu */}
+          <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+            {menuItems.map((item) => {
               const isActive = location.pathname === item.href;
+              const Icon = item.icon;
+              
               return (
-                <li key={item.name}>
-                  <Link
-                    to={item.href}
-                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-                      isActive
-                        ? 'bg-white/20 text-white shadow-lg'
-                        : 'text-white/70 hover:bg-white/10 hover:text-white'
-                    }`}
-                    onClick={() => setSidebarOpen(false)}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    <span className="font-medium">{item.name}</span>
-                  </Link>
-                </li>
+                <Link
+                  key={item.name}
+                  to={item.href}
+                  onClick={closeSidebar}
+                  className={`
+                    flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150
+                    ${isActive 
+                      ? 'bg-gradient-to-r from-purple-100 to-blue-100 text-purple-700 border-l-4 border-purple-500' 
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    }
+                  `}
+                >
+                  <Icon className={`h-5 w-5 ${isActive ? 'text-purple-600' : 'text-gray-400'}`} />
+                  <span>{item.name}</span>
+                </Link>
               );
             })}
-          </ul>
-        </nav>
+          </nav>
 
-        <div className="absolute bottom-4 left-4 right-4">
-          <div className="bg-white/10 rounded-lg p-4 mb-4">
-            <div className="text-white/90 text-sm font-medium truncate">{userData?.name}</div>
-            <div className="text-white/60 text-xs capitalize">{userData?.role}</div>
-          </div>
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-white/70 hover:bg-white/10 hover:text-white"
-            onClick={handleLogout}
-          >
-            <LogOut className="h-5 w-5 mr-3" />
-            Sign Out
-          </Button>
-        </div>
-      </div>
+          {/* User Profile Section */}
+          <div className="border-t border-gray-200 p-4">
+            <div className="relative">
+              <button
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="flex items-center space-x-3 w-full p-3 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                  <User className="h-4 w-4 text-white" />
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium text-gray-900">{userData?.name || 'User'}</p>
+                  <p className="text-xs text-gray-500">{userData?.email}</p>
+                </div>
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
 
-      {/* Main content */}
-      <div className="lg:ml-64">
-        {/* Mobile header */}
-        <div className="lg:hidden bg-white shadow-sm border-b px-4 py-3 relative z-30">
-          <div className="flex items-center justify-between">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="h-6 w-6" />
-            </Button>
-            <div className="flex items-center space-x-2">
-              <Crown className="h-6 w-6 text-purple-600" />
-              <span className="font-bold text-gray-800 text-sm sm:text-base">Swetha's Couture</span>
+              {/* User Dropdown Menu */}
+              {userMenuOpen && (
+                <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg py-2">
+                  <div className="px-4 py-2 border-b border-gray-100">
+                    <p className="text-sm font-medium text-gray-900">{userData?.name}</p>
+                    <p className="text-xs text-gray-500">{userData?.email}</p>
+                    <Badge 
+                      variant="outline" 
+                      className={`mt-1 text-xs ${isAdmin ? 'text-purple-600 border-purple-200' : 'text-blue-600 border-blue-200'}`}
+                    >
+                      {isAdmin ? 'Administrator' : 'Staff Member'}
+                    </Badge>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center space-x-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Page content */}
-        <main className="p-4 sm:p-6 min-h-screen">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-h-screen lg:ml-0">
+        {/* Top Navigation Bar */}
+        <header className="bg-white shadow-sm border-b border-gray-200 h-16 flex items-center justify-between px-6 lg:px-8">
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleSidebar}
+              className="lg:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">
+                {menuItems.find(item => item.href === location.pathname)?.name || 'Dashboard'}
+              </h2>
+              <p className="text-sm text-gray-500">
+                Welcome back, {userData?.name}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <Badge 
+              variant="outline" 
+              className={`${isAdmin ? 'text-purple-600 border-purple-200' : 'text-blue-600 border-blue-200'}`}
+            >
+              {isAdmin ? 'Admin' : 'Staff'}
+            </Badge>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 p-6 lg:p-8 overflow-auto">
           {children}
         </main>
       </div>
