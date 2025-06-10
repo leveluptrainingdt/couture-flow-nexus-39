@@ -14,7 +14,7 @@ import { Plus, Search, Package, TrendingUp, AlertTriangle, Phone, MessageCircle,
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
-import { productTypes, productCategories } from '@/utils/productTypes';
+import { PRODUCT_TYPES, CATEGORIES } from '@/utils/productTypes';
 
 interface InventoryItem {
   id: string;
