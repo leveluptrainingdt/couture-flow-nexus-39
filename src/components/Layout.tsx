@@ -42,6 +42,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Reports', href: '/reports', icon: BarChart3, access: ['admin'] },
     { name: 'Admin Panel', href: '/admin', icon: Crown, access: ['admin'] },
     { name: 'Control Panel', href: '/admin/control-panel', icon: Shield, access: ['admin'] },
+    { name: 'Settings', href: '/admin/settings', icon: Settings, access: ['admin'] },
   ];
 
   const filteredNavigation = navigation.filter(item => 

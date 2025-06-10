@@ -20,6 +20,7 @@ import AdminExpenses from "@/pages/AdminExpenses";
 import Reports from "@/pages/Reports";
 import Admin from "@/pages/Admin";
 import AdminControlPanel from "@/pages/AdminControlPanel";
+import Settings from "@/pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -115,6 +116,13 @@ const App = () => (
               <ProtectedRoute adminOnly>
                 <Layout>
                   <AdminControlPanel />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/settings" element={
+              <ProtectedRoute adminOnly>
+                <Layout>
+                  <Settings />
                 </Layout>
               </ProtectedRoute>
             } />
