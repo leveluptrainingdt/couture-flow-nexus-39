@@ -16,6 +16,7 @@ import Alterations from "@/pages/Alterations";
 import Customers from "@/pages/Customers";
 import Staff from "@/pages/Staff";
 import Expenses from "@/pages/Expenses";
+import AdminExpenses from "@/pages/AdminExpenses";
 import Reports from "@/pages/Reports";
 import Admin from "@/pages/Admin";
 import NotFound from "./pages/NotFound";
@@ -85,6 +86,13 @@ const App = () => (
               <ProtectedRoute adminOnly>
                 <Layout>
                   <Expenses />
+                </Layout>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/expenses" element={
+              <ProtectedRoute adminOnly>
+                <Layout>
+                  <AdminExpenses />
                 </Layout>
               </ProtectedRoute>
             } />
