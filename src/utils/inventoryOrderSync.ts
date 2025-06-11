@@ -7,6 +7,56 @@ interface OrderItem {
   quantity: number;
 }
 
+export const updateInventoryStock = async (orderItems: OrderItem[]): Promise<{ success: boolean; missingItems: string[] }> => {
+  const missingItems: string[] = [];
+  
+  try {
+    for (const orderItem of orderItems) {
+      // Find matching inventory items by type
+      const inventoryQuery = query(
+        collection(db, 'inventory'),
+        where('type', '==', orderItem.type),
+        where('quantity', '>', 0)
+      );
+      
+      const inventorySnapshot = await getDocs(inventoryQuery);
+      
+      if (inventorySnapshot.empty) {
+        missingItems.push(orderItem.type);
+        continue;
+      }
+      
+      let remainingQuantity = orderItem.quantity;
+      
+      for (const inventoryDoc of inventorySnapshot.docs) {
+        if (remainingQuantity <= 0) break;
+        
+        const inventoryData = inventoryDoc.data();
+        const availableQuantity = inventoryData.quantity;
+        
+        const deductQuantity = Math.min(remainingQuantity, availableQuantity);
+        const newQuantity = availableQuantity - deductQuantity;
+        
+        await updateDoc(doc(db, 'inventory', inventoryDoc.id), {
+          quantity: newQuantity,
+          updatedAt: serverTimestamp()
+        });
+        
+        remainingQuantity -= deductQuantity;
+      }
+      
+      if (remainingQuantity > 0) {
+        missingItems.push(`${orderItem.type} (${remainingQuantity} units short)`);
+      }
+    }
+    
+    return { success: missingItems.length === 0, missingItems };
+  } catch (error) {
+    console.error('Error updating inventory:', error);
+    return { success: false, missingItems: ['Error updating inventory'] };
+  }
+};
+
 export const deductInventoryForOrder = async (orderItems: OrderItem[]): Promise<{ success: boolean; missingItems: string[] }> => {
   const missingItems: string[] = [];
   
