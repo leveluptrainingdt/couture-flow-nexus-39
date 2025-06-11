@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -51,6 +50,9 @@ const Orders = () => {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   const [formData, setFormData] = useState({
     orderNumber: '',
@@ -316,6 +318,12 @@ const Orders = () => {
       case 'cancelled': return 'bg-red-100 text-red-700 border-red-200';
       default: return 'bg-gray-100 text-gray-700 border-gray-200';
     }
+  };
+
+  const openImageViewer = (images: string[], index: number = 0) => {
+    setSelectedImages(images);
+    setSelectedImageIndex(index);
+    setImageViewerOpen(true);
   };
 
   const filteredOrders = orders.filter(order =>
@@ -761,11 +769,13 @@ const Orders = () => {
                     <TableCell>
                       <div className="flex space-x-2">
                         {order.designImages && order.designImages.length > 0 && (
-                          <ImageViewer images={order.designImages}>
-                            <Button size="sm" variant="outline">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </ImageViewer>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => openImageViewer(order.designImages!, 0)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
                         )}
                         <Button
                           size="sm"
@@ -838,6 +848,15 @@ const Orders = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Image Viewer */}
+      <ImageViewer
+        images={selectedImages}
+        currentIndex={selectedImageIndex}
+        isOpen={imageViewerOpen}
+        onClose={() => setImageViewerOpen(false)}
+        title="Order Design Images"
+      />
     </div>
   );
 };
