@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -9,13 +10,21 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Package, TrendingUp, Clock, Search, Edit, Trash2, Eye, Camera } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Plus, Package, TrendingUp, Clock, Search, Edit, Trash2, Eye, Camera, MessageSquare, CalendarIcon, Filter } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import ContactActions from '@/components/ContactActions';
 import ImageViewer from '@/components/ImageViewer';
+import CustomerAutoSuggest from '@/components/CustomerAutoSuggest';
+import DynamicMeasurements from '@/components/DynamicMeasurements';
+import WhatsAppMessageModal from '@/components/WhatsAppMessageModal';
+import OrderCalendar from '@/components/OrderCalendar';
 import { updateInventoryStock } from '@/utils/inventoryOrderSync';
+import { format } from 'date-fns';
 
 interface Order {
   id: string;
@@ -31,12 +40,7 @@ interface Order {
   status: 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled';
   orderDate: string;
   deliveryDate: string;
-  measurements?: {
-    chest?: string;
-    waist?: string;
-    length?: string;
-    shoulder?: string;
-  };
+  measurements?: any;
   designImages?: string[];
   notes?: string;
   createdAt: any;
@@ -49,10 +53,18 @@ const Orders = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState<Date | undefined>();
+  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [uploadingImages, setUploadingImages] = useState(false);
   const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [selectedOrderForWhatsApp, setSelectedOrderForWhatsApp] = useState<Order | null>(null);
+  const [currentView, setCurrentView] = useState<'list' | 'calendar'>('list');
+  const [visibleOrders, setVisibleOrders] = useState(5);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     orderNumber: '',
@@ -67,17 +79,22 @@ const Orders = () => {
     orderDate: '',
     deliveryDate: '',
     notes: '',
-    measurements: {
-      chest: '',
-      waist: '',
-      length: '',
-      shoulder: ''
-    },
+    measurements: {},
     designImages: [] as string[]
   });
 
   const itemTypes = [
     'Blouse', 'Lehenga', 'Saree', 'Kurti', 'Dress', 'Gown', 'Suit', 'Other'
+  ];
+
+  const statusOptions = [
+    { value: 'all', label: 'All Orders' },
+    { value: 'received', label: 'New Orders' },
+    { value: 'in-progress', label: 'In Progress' },
+    { value: 'ready', label: 'Ready' },
+    { value: 'delivered', label: 'Delivered' },
+    { value: 'cancelled', label: 'Cancelled' },
+    { value: 'recent', label: 'Recently Modified' }
   ];
 
   useEffect(() => {
@@ -114,8 +131,43 @@ const Orders = () => {
     const year = date.getFullYear().toString().slice(-2);
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
     const day = date.getDate().toString().padStart(2, '0');
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
     return `SC${year}${month}${day}${random}`;
+  };
+
+  const createCustomerRecord = async (orderData: any) => {
+    try {
+      // Check if customer already exists with same phone
+      const customersSnapshot = await getDocs(collection(db, 'customers'));
+      const existingCustomer = customersSnapshot.docs.find(doc => 
+        doc.data().phone === orderData.customerPhone
+      );
+
+      if (!existingCustomer) {
+        await addDoc(collection(db, 'customers'), {
+          name: orderData.customerName,
+          phone: orderData.customerPhone,
+          email: orderData.customerEmail || '',
+          measurements: orderData.measurements || {},
+          totalOrders: 1,
+          totalSpent: orderData.totalAmount,
+          lastOrderDate: orderData.orderDate,
+          customerType: 'regular',
+          createdAt: serverTimestamp()
+        });
+      } else {
+        // Update existing customer
+        const customerData = existingCustomer.data();
+        await updateDoc(doc(db, 'customers', existingCustomer.id), {
+          totalOrders: (customerData.totalOrders || 0) + 1,
+          totalSpent: (customerData.totalSpent || 0) + orderData.totalAmount,
+          lastOrderDate: orderData.orderDate,
+          updatedAt: serverTimestamp()
+        });
+      }
+    } catch (error) {
+      console.error('Error creating/updating customer record:', error);
+    }
   };
 
   const uploadImages = async (files: FileList) => {
@@ -124,13 +176,13 @@ const Orders = () => {
 
     try {
       for (const file of Array.from(files)) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', 'swetha');
+        const formDataUpload = new FormData();
+        formDataUpload.append('file', file);
+        formDataUpload.append('upload_preset', 'swetha');
 
         const response = await fetch('https://api.cloudinary.com/v1_1/dvmrhs2ek/image/upload', {
           method: 'POST',
-          body: formData
+          body: formDataUpload
         });
 
         const data = await response.json();
@@ -188,6 +240,9 @@ const Orders = () => {
       } else {
         await addDoc(collection(db, 'orders'), orderData);
         
+        // Create customer record if new order
+        await createCustomerRecord(orderData);
+        
         // Update inventory stock
         try {
           await updateInventoryStock([{
@@ -207,6 +262,7 @@ const Orders = () => {
       setIsDialogOpen(false);
       setEditingOrder(null);
       resetForm();
+      setSelectedCustomer(null);
       fetchOrders();
     } catch (error) {
       console.error('Error saving order:', error);
@@ -232,14 +288,20 @@ const Orders = () => {
       orderDate: '',
       deliveryDate: '',
       notes: '',
-      measurements: {
-        chest: '',
-        waist: '',
-        length: '',
-        shoulder: ''
-      },
+      measurements: {},
       designImages: []
     });
+  };
+
+  const handleCustomerSelect = (customer: any) => {
+    setSelectedCustomer(customer);
+    setFormData(prev => ({
+      ...prev,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      customerEmail: customer.email || '',
+      measurements: customer.measurements || {}
+    }));
   };
 
   const handleEdit = (order: Order) => {
@@ -257,12 +319,7 @@ const Orders = () => {
       orderDate: order.orderDate,
       deliveryDate: order.deliveryDate,
       notes: order.notes || '',
-      measurements: {
-        chest: order.measurements?.chest || '',
-        waist: order.measurements?.waist || '',
-        length: order.measurements?.length || '',
-        shoulder: order.measurements?.shoulder || ''
-      },
+      measurements: order.measurements || {},
       designImages: order.designImages || []
     });
     setIsDialogOpen(true);
@@ -326,12 +383,64 @@ const Orders = () => {
     setImageViewerOpen(true);
   };
 
-  const filteredOrders = orders.filter(order =>
-    order.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    order.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    order.customerPhone?.includes(searchTerm) ||
-    order.itemType?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const openWhatsAppModal = (order: Order) => {
+    setSelectedOrderForWhatsApp(order);
+    setWhatsappModalOpen(true);
+  };
+
+  const filterOrders = (orders: Order[]) => {
+    let filtered = orders;
+
+    // Text search filter
+    if (searchTerm) {
+      filtered = filtered.filter(order =>
+        order.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.customerPhone?.includes(searchTerm) ||
+        order.itemType?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'recent') {
+        const fiveDaysAgo = new Date();
+        fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+        filtered = filtered.filter(order => 
+          order.updatedAt && order.updatedAt.toDate() > fiveDaysAgo
+        );
+      } else {
+        filtered = filtered.filter(order => order.status === statusFilter);
+      }
+    }
+
+    // Date filter
+    if (dateFilter) {
+      const filterDate = format(dateFilter, 'yyyy-MM-dd');
+      filtered = filtered.filter(order => 
+        order.orderDate === filterDate || order.deliveryDate === filterDate
+      );
+    }
+
+    // Date range filter
+    if (dateRange.from && dateRange.to) {
+      const fromDate = format(dateRange.from, 'yyyy-MM-dd');
+      const toDate = format(dateRange.to, 'yyyy-MM-dd');
+      filtered = filtered.filter(order => 
+        (order.orderDate >= fromDate && order.orderDate <= toDate) ||
+        (order.deliveryDate >= fromDate && order.deliveryDate <= toDate)
+      );
+    }
+
+    return filtered;
+  };
+
+  const filteredOrders = filterOrders(orders);
+  const displayedOrders = filteredOrders.slice(0, visibleOrders);
+
+  const loadMoreOrders = () => {
+    setVisibleOrders(prev => prev + 5);
+  };
 
   if (loading) {
     return (
@@ -371,279 +480,245 @@ const Orders = () => {
           <h1 className="text-3xl font-bold text-gray-900">Order Management</h1>
           <p className="text-gray-600">Track custom orders and customer requests</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button 
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-              onClick={() => {
-                setEditingOrder(null);
-                resetForm();
-              }}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Order
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {editingOrder ? 'Edit Order' : 'Create New Order'}
-              </DialogTitle>
-              <DialogDescription>
-                Fill in the order details below.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Customer Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Customer Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="customerName">Customer Name</Label>
-                    <Input
-                      id="customerName"
+        <div className="flex space-x-2">
+          <Tabs value={currentView} onValueChange={(value) => setCurrentView(value as 'list' | 'calendar')}>
+            <TabsList>
+              <TabsTrigger value="list">List View</TabsTrigger>
+              <TabsTrigger value="calendar">Calendar View</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                onClick={() => {
+                  setEditingOrder(null);
+                  resetForm();
+                  setSelectedCustomer(null);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                New Order
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingOrder ? 'Edit Order' : 'Create New Order'}
+                </DialogTitle>
+                <DialogDescription>
+                  Fill in the order details below.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Customer Information */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium">Customer Information</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <CustomerAutoSuggest
                       value={formData.customerName}
-                      onChange={(e) => setFormData({...formData, customerName: e.target.value})}
-                      placeholder="Customer name"
-                      required
+                      onChange={(value) => setFormData({...formData, customerName: value})}
+                      onCustomerSelect={handleCustomerSelect}
+                      placeholder="Start typing customer name..."
                     />
+                    <div>
+                      <Label htmlFor="customerPhone">Phone Number</Label>
+                      <Input
+                        id="customerPhone"
+                        value={formData.customerPhone}
+                        onChange={(e) => setFormData({...formData, customerPhone: e.target.value})}
+                        placeholder="Phone number"
+                        required
+                      />
+                    </div>
                   </div>
                   <div>
-                    <Label htmlFor="customerPhone">Phone Number</Label>
+                    <Label htmlFor="customerEmail">Email (Optional)</Label>
                     <Input
-                      id="customerPhone"
-                      value={formData.customerPhone}
-                      onChange={(e) => setFormData({...formData, customerPhone: e.target.value})}
-                      placeholder="Phone number"
-                      required
+                      id="customerEmail"
+                      type="email"
+                      value={formData.customerEmail}
+                      onChange={(e) => setFormData({...formData, customerEmail: e.target.value})}
+                      placeholder="Email address"
                     />
                   </div>
+                  {selectedCustomer && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                      <p className="text-sm text-green-700">
+                        ✓ Using existing customer data. You can modify the details above if needed.
+                      </p>
+                    </div>
+                  )}
                 </div>
+
+                {/* Order Details */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium">Order Details</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <Label htmlFor="itemType">Item Type</Label>
+                      <Select value={formData.itemType} onValueChange={(value) => setFormData({...formData, itemType: value})}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select item type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {itemTypes.map(type => (
+                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="quantity">Quantity</Label>
+                      <Input
+                        id="quantity"
+                        type="number"
+                        min="1"
+                        value={formData.quantity}
+                        onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value) || 1})}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="status">Status</Label>
+                      <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value as Order['status']})}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="received">Received</SelectItem>
+                          <SelectItem value="in-progress">In Progress</SelectItem>
+                          <SelectItem value="ready">Ready</SelectItem>
+                          <SelectItem value="delivered">Delivered</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="orderDate">Order Date</Label>
+                      <Input
+                        id="orderDate"
+                        type="date"
+                        value={formData.orderDate}
+                        onChange={(e) => setFormData({...formData, orderDate: e.target.value})}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="deliveryDate">Delivery Date</Label>
+                      <Input
+                        id="deliveryDate"
+                        type="date"
+                        value={formData.deliveryDate}
+                        onChange={(e) => setFormData({...formData, deliveryDate: e.target.value})}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="totalAmount">Total Amount (₹)</Label>
+                      <Input
+                        id="totalAmount"
+                        type="number"
+                        min="0"
+                        value={formData.totalAmount}
+                        onChange={(e) => setFormData({...formData, totalAmount: parseFloat(e.target.value) || 0})}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="advanceAmount">Advance Amount (₹)</Label>
+                      <Input
+                        id="advanceAmount"
+                        type="number"
+                        min="0"
+                        max={formData.totalAmount}
+                        value={formData.advanceAmount}
+                        onChange={(e) => setFormData({...formData, advanceAmount: parseFloat(e.target.value) || 0})}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dynamic Measurements */}
+                {formData.itemType && (
+                  <DynamicMeasurements
+                    itemType={formData.itemType}
+                    measurements={formData.measurements}
+                    onChange={(measurements) => setFormData({...formData, measurements})}
+                  />
+                )}
+
+                {/* Design Images */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium">Design Images</h3>
+                  <div>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={(e) => e.target.files && uploadImages(e.target.files)}
+                      style={{ display: 'none' }}
+                      id="design-images"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => document.getElementById('design-images')?.click()}
+                      disabled={uploadingImages}
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      {uploadingImages ? 'Uploading...' : 'Upload Images'}
+                    </Button>
+                  </div>
+                  {formData.designImages.length > 0 && (
+                    <div className="grid grid-cols-4 gap-4">
+                      {formData.designImages.map((url, index) => (
+                        <div key={index} className="relative">
+                          <img src={url} alt={`Design ${index + 1}`} className="w-full h-20 object-cover rounded" />
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="absolute -top-2 -right-2 h-6 w-6 p-0"
+                            onClick={() => removeImage(index)}
+                          >
+                            ×
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div>
-                  <Label htmlFor="customerEmail">Email (Optional)</Label>
-                  <Input
-                    id="customerEmail"
-                    type="email"
-                    value={formData.customerEmail}
-                    onChange={(e) => setFormData({...formData, customerEmail: e.target.value})}
-                    placeholder="Email address"
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                    placeholder="Any special instructions or notes"
+                    rows={3}
                   />
                 </div>
-              </div>
 
-              {/* Order Details */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Order Details</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="itemType">Item Type</Label>
-                    <Select value={formData.itemType} onValueChange={(value) => setFormData({...formData, itemType: value})}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select item type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {itemTypes.map(type => (
-                          <SelectItem key={type} value={type}>{type}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="quantity">Quantity</Label>
-                    <Input
-                      id="quantity"
-                      type="number"
-                      min="1"
-                      value={formData.quantity}
-                      onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value) || 1})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="status">Status</Label>
-                    <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value as Order['status']})}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="received">Received</SelectItem>
-                        <SelectItem value="in-progress">In Progress</SelectItem>
-                        <SelectItem value="ready">Ready</SelectItem>
-                        <SelectItem value="delivered">Delivered</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="orderDate">Order Date</Label>
-                    <Input
-                      id="orderDate"
-                      type="date"
-                      value={formData.orderDate}
-                      onChange={(e) => setFormData({...formData, orderDate: e.target.value})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="deliveryDate">Delivery Date</Label>
-                    <Input
-                      id="deliveryDate"
-                      type="date"
-                      value={formData.deliveryDate}
-                      onChange={(e) => setFormData({...formData, deliveryDate: e.target.value})}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="totalAmount">Total Amount (₹)</Label>
-                    <Input
-                      id="totalAmount"
-                      type="number"
-                      min="0"
-                      value={formData.totalAmount}
-                      onChange={(e) => setFormData({...formData, totalAmount: parseFloat(e.target.value) || 0})}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="advanceAmount">Advance Amount (₹)</Label>
-                    <Input
-                      id="advanceAmount"
-                      type="number"
-                      min="0"
-                      max={formData.totalAmount}
-                      value={formData.advanceAmount}
-                      onChange={(e) => setFormData({...formData, advanceAmount: parseFloat(e.target.value) || 0})}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Measurements */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Measurements</h3>
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <Label htmlFor="chest">Chest</Label>
-                    <Input
-                      id="chest"
-                      value={formData.measurements.chest}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        measurements: {...formData.measurements, chest: e.target.value}
-                      })}
-                      placeholder="inches"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="waist">Waist</Label>
-                    <Input
-                      id="waist"
-                      value={formData.measurements.waist}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        measurements: {...formData.measurements, waist: e.target.value}
-                      })}
-                      placeholder="inches"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="length">Length</Label>
-                    <Input
-                      id="length"
-                      value={formData.measurements.length}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        measurements: {...formData.measurements, length: e.target.value}
-                      })}
-                      placeholder="inches"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="shoulder">Shoulder</Label>
-                    <Input
-                      id="shoulder"
-                      value={formData.measurements.shoulder}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        measurements: {...formData.measurements, shoulder: e.target.value}
-                      })}
-                      placeholder="inches"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Design Images */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Design Images</h3>
-                <div>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={(e) => e.target.files && uploadImages(e.target.files)}
-                    style={{ display: 'none' }}
-                    id="design-images"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => document.getElementById('design-images')?.click()}
-                    disabled={uploadingImages}
-                  >
-                    <Camera className="h-4 w-4 mr-2" />
-                    {uploadingImages ? 'Uploading...' : 'Upload Images'}
+                <div className="flex justify-end space-x-3">
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="bg-gradient-to-r from-blue-600 to-purple-600">
+                    {editingOrder ? 'Update Order' : 'Create Order'}
                   </Button>
                 </div>
-                {formData.designImages.length > 0 && (
-                  <div className="grid grid-cols-4 gap-4">
-                    {formData.designImages.map((url, index) => (
-                      <div key={index} className="relative">
-                        <img src={url} alt={`Design ${index + 1}`} className="w-full h-20 object-cover rounded" />
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          className="absolute -top-2 -right-2 h-6 w-6 p-0"
-                          onClick={() => removeImage(index)}
-                        >
-                          ×
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  value={formData.notes}
-                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                  placeholder="Any special instructions or notes"
-                  rows={3}
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" className="bg-gradient-to-r from-blue-600 to-purple-600">
-                  {editingOrder ? 'Update Order' : 'Create Order'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -693,161 +768,238 @@ const Orders = () => {
         </Card>
       </div>
 
-      {/* Search */}
-      <div className="flex items-center space-x-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="Search orders..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-      </div>
-
-      {/* Orders Table */}
-      <Card className="border-0 shadow-md">
-        <CardHeader>
-          <CardTitle>Orders</CardTitle>
-          <CardDescription>Manage customer orders and track progress</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {filteredOrders.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Order #</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Delivery</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredOrders.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-medium">{order.orderNumber}</TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{order.customerName}</div>
-                        <div className="text-sm text-gray-500">{order.customerEmail}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm">{order.customerPhone}</span>
-                        <ContactActions 
-                          phone={order.customerPhone}
-                          message={`Hi ${order.customerName}, your order ${order.orderNumber} for ${order.itemType} is currently ${order.status}. Thank you for choosing Swetha's Couture!`}
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{order.itemType}</div>
-                        <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">₹{(order.totalAmount || 0).toLocaleString()}</div>
-                        <div className="text-sm text-gray-500">
-                          Balance: ₹{(order.remainingAmount || 0).toLocaleString()}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getStatusColor(order.status)} variant="outline">
-                        {order.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{order.deliveryDate}</TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        {order.designImages && order.designImages.length > 0 && (
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => openImageViewer(order.designImages!, 0)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEdit(order)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        {order.status === 'received' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-blue-600"
-                            onClick={() => updateStatus(order.id, 'in-progress')}
-                          >
-                            Start
-                          </Button>
-                        )}
-                        {order.status === 'in-progress' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-green-600"
-                            onClick={() => updateStatus(order.id, 'ready')}
-                          >
-                            Ready
-                          </Button>
-                        )}
-                        {order.status === 'ready' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-purple-600"
-                            onClick={() => updateStatus(order.id, 'delivered')}
-                          >
-                            Deliver
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDelete(order.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="text-center py-12">
-              <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No orders found</h3>
-              <p className="text-gray-600 mb-4">
-                {searchTerm ? 'No orders match your search.' : 'Start by creating your first order.'}
-              </p>
-              {!searchTerm && (
-                <Button 
-                  className="bg-gradient-to-r from-blue-600 to-purple-600"
-                  onClick={() => setIsDialogOpen(true)}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create First Order
-                </Button>
-              )}
+      {currentView === 'calendar' ? (
+        <OrderCalendar 
+          orders={orders} 
+          onDateSelect={(date, dayOrders) => {
+            console.log('Selected date:', date, 'Orders:', dayOrders);
+          }}
+        />
+      ) : (
+        <>
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search orders..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
             </div>
-          )}
-        </CardContent>
-      </Card>
+            
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-48">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {statusOptions.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline">
+                  <CalendarIcon className="h-4 w-4 mr-2" />
+                  {dateFilter ? format(dateFilter, 'PPP') : 'Filter by Date'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateFilter}
+                  onSelect={setDateFilter}
+                  initialFocus
+                />
+                {dateFilter && (
+                  <div className="p-3 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setDateFilter(undefined)}
+                      className="w-full"
+                    >
+                      Clear Filter
+                    </Button>
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* Orders Table */}
+          <Card className="border-0 shadow-md">
+            <CardHeader>
+              <CardTitle>Orders ({filteredOrders.length})</CardTitle>
+              <CardDescription>Manage customer orders and track progress</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {displayedOrders.length > 0 ? (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Order #</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Contact</TableHead>
+                        <TableHead>Item</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Delivery</TableHead>
+                        <TableHead>Order Date</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {displayedOrders.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-medium">#{order.orderNumber.slice(-4)}</TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{order.customerName}</div>
+                              <div className="text-sm text-gray-500">{order.customerEmail}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm">{order.customerPhone}</span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openWhatsAppModal(order)}
+                                className="text-green-600 hover:text-green-700"
+                              >
+                                <MessageSquare className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{order.itemType}</div>
+                              <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">₹{(order.totalAmount || 0).toLocaleString()}</div>
+                              <div className="text-sm text-gray-500">
+                                Balance: ₹{(order.remainingAmount || 0).toLocaleString()}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={getStatusColor(order.status)} variant="outline">
+                              {order.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{order.deliveryDate}</TableCell>
+                          <TableCell>
+                            <div className="text-sm text-gray-600">{order.orderDate}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex space-x-2">
+                              {order.designImages && order.designImages.length > 0 && (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => openImageViewer(order.designImages!, 0)}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleEdit(order)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              {order.status === 'received' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-blue-600"
+                                  onClick={() => updateStatus(order.id, 'in-progress')}
+                                >
+                                  Start
+                                </Button>
+                              )}
+                              {order.status === 'in-progress' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-green-600"
+                                  onClick={() => updateStatus(order.id, 'ready')}
+                                >
+                                  Ready
+                                </Button>
+                              )}
+                              {order.status === 'ready' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-purple-600"
+                                  onClick={() => updateStatus(order.id, 'delivered')}
+                                >
+                                  Deliver
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDelete(order.id)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  
+                  {/* Load More Button */}
+                  {visibleOrders < filteredOrders.length && (
+                    <div className="text-center mt-6">
+                      <Button 
+                        variant="outline" 
+                        onClick={loadMoreOrders}
+                        className="w-full sm:w-auto"
+                      >
+                        Load More Orders ({filteredOrders.length - visibleOrders} remaining)
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No orders found</h3>
+                  <p className="text-gray-600 mb-4">
+                    {searchTerm || statusFilter !== 'all' || dateFilter ? 'No orders match your filters.' : 'Start by creating your first order.'}
+                  </p>
+                  {!searchTerm && statusFilter === 'all' && !dateFilter && (
+                    <Button 
+                      className="bg-gradient-to-r from-blue-600 to-purple-600"
+                      onClick={() => setIsDialogOpen(true)}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create First Order
+                    </Button>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* Image Viewer */}
       <ImageViewer
@@ -857,6 +1009,18 @@ const Orders = () => {
         onClose={() => setImageViewerOpen(false)}
         title="Order Design Images"
       />
+
+      {/* WhatsApp Message Modal */}
+      {selectedOrderForWhatsApp && (
+        <WhatsAppMessageModal
+          isOpen={whatsappModalOpen}
+          onClose={() => {
+            setWhatsappModalOpen(false);
+            setSelectedOrderForWhatsApp(null);
+          }}
+          order={selectedOrderForWhatsApp}
+        />
+      )}
     </div>
   );
 };
