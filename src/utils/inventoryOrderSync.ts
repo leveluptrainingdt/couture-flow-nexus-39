@@ -1,4 +1,3 @@
-
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -12,6 +11,17 @@ interface RequiredMaterial {
   name: string;
   quantity: number;
   unit: string;
+}
+
+interface InventoryItem {
+  id: string;
+  name: string;
+  type: string;
+  quantity: number;
+  unit: string;
+  minStock?: number;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 export const updateInventoryStock = async (orderItems: OrderItem[]): Promise<{ success: boolean; missingItems: string[] }> => {
@@ -196,12 +206,12 @@ export const deductRequiredMaterials = async (materials: RequiredMaterial[]): Pr
       ));
       
       if (!inventoryDoc.empty) {
-        const doc = inventoryDoc.docs[0];
-        const inventoryData = doc.data();
+        const docRef = inventoryDoc.docs[0];
+        const inventoryData = docRef.data() as InventoryItem;
         const availableQuantity = inventoryData.quantity;
         
         if (availableQuantity >= material.quantity) {
-          await updateDoc(doc.ref, {
+          await updateDoc(docRef.ref, {
             quantity: availableQuantity - material.quantity,
             updatedAt: serverTimestamp()
           });
