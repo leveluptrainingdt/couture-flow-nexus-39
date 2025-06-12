@@ -7,6 +7,13 @@ interface OrderItem {
   quantity: number;
 }
 
+interface RequiredMaterial {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+}
+
 export const updateInventoryStock = async (orderItems: OrderItem[]): Promise<{ success: boolean; missingItems: string[] }> => {
   const missingItems: string[] = [];
   
@@ -62,14 +69,50 @@ export const deductInventoryForOrder = async (orderItems: OrderItem[]): Promise<
   
   try {
     for (const orderItem of orderItems) {
-      // Find matching inventory items by type
-      const inventoryQuery = query(
+      // Find inventory item by ID (for required materials) or by name/type
+      let inventoryQuery;
+      if (orderItem.type.length === 20) { // Assuming Firebase doc IDs are 20 characters
+        // Direct ID lookup for required materials
+        const inventoryDoc = await getDocs(query(
+          collection(db, 'inventory'),
+          where('__name__', '==', orderItem.type)
+        ));
+        
+        if (!inventoryDoc.empty) {
+          const doc = inventoryDoc.docs[0];
+          const inventoryData = doc.data();
+          const availableQuantity = inventoryData.quantity;
+          
+          if (availableQuantity >= orderItem.quantity) {
+            await updateDoc(doc.ref, {
+              quantity: availableQuantity - orderItem.quantity,
+              updatedAt: serverTimestamp()
+            });
+          } else {
+            missingItems.push(`${inventoryData.name} (${orderItem.quantity - availableQuantity} units short)`);
+          }
+        } else {
+          missingItems.push(orderItem.type);
+        }
+        continue;
+      }
+      
+      // Fallback to name/type search
+      inventoryQuery = query(
         collection(db, 'inventory'),
-        where('type', '==', orderItem.type),
-        where('quantity', '>', 0)
+        where('name', '==', orderItem.type)
       );
       
-      const inventorySnapshot = await getDocs(inventoryQuery);
+      let inventorySnapshot = await getDocs(inventoryQuery);
+      
+      // If not found by name, try by type
+      if (inventorySnapshot.empty) {
+        inventoryQuery = query(
+          collection(db, 'inventory'),
+          where('type', '==', orderItem.type)
+        );
+        inventorySnapshot = await getDocs(inventoryQuery);
+      }
       
       if (inventorySnapshot.empty) {
         missingItems.push(orderItem.type);
@@ -138,5 +181,41 @@ export const checkInventoryAvailability = async (orderItems: OrderItem[]): Promi
   } catch (error) {
     console.error('Error checking inventory availability:', error);
     return { available: false, shortages: ['Error checking inventory'] };
+  }
+};
+
+// New function specifically for required materials
+export const deductRequiredMaterials = async (materials: RequiredMaterial[]): Promise<{ success: boolean; missingItems: string[] }> => {
+  const missingItems: string[] = [];
+  
+  try {
+    for (const material of materials) {
+      const inventoryDoc = await getDocs(query(
+        collection(db, 'inventory'),
+        where('__name__', '==', material.id)
+      ));
+      
+      if (!inventoryDoc.empty) {
+        const doc = inventoryDoc.docs[0];
+        const inventoryData = doc.data();
+        const availableQuantity = inventoryData.quantity;
+        
+        if (availableQuantity >= material.quantity) {
+          await updateDoc(doc.ref, {
+            quantity: availableQuantity - material.quantity,
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          missingItems.push(`${material.name} (${material.quantity - availableQuantity} units short)`);
+        }
+      } else {
+        missingItems.push(material.name);
+      }
+    }
+    
+    return { success: missingItems.length === 0, missingItems };
+  } catch (error) {
+    console.error('Error deducting required materials:', error);
+    return { success: false, missingItems: ['Error deducting materials'] };
   }
 };

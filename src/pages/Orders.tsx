@@ -13,17 +13,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Plus, Package, TrendingUp, Clock, Search, Edit, Trash2, Eye, Camera, MessageSquare, CalendarIcon, Filter } from 'lucide-react';
+import { Plus, Package, TrendingUp, Clock, Search, Edit, Trash2, Eye, Camera, MessageSquare, CalendarIcon, Filter, Grid3X3, List, Phone } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
-import ContactActions from '@/components/ContactActions';
-import ImageViewer from '@/components/ImageViewer';
 import CustomerAutoSuggest from '@/components/CustomerAutoSuggest';
 import DynamicMeasurements from '@/components/DynamicMeasurements';
 import WhatsAppMessageModal from '@/components/WhatsAppMessageModal';
 import OrderCalendar from '@/components/OrderCalendar';
-import { updateInventoryStock } from '@/utils/inventoryOrderSync';
+import OrderGridView from '@/components/OrderGridView';
+import OrderDetailsModal from '@/components/OrderDetailsModal';
+import StaffAssignment from '@/components/StaffAssignment';
+import RequiredMaterials from '@/components/RequiredMaterials';
+import { deductInventoryForOrder } from '@/utils/inventoryOrderSync';
 import { format } from 'date-fns';
 
 interface Order {
@@ -43,6 +45,8 @@ interface Order {
   measurements?: any;
   designImages?: string[];
   notes?: string;
+  assignedStaff?: string[];
+  requiredMaterials?: any[];
   createdAt: any;
   updatedAt?: any;
 }
@@ -58,14 +62,15 @@ const Orders = () => {
   const [dateFilter, setDateFilter] = useState<Date | undefined>();
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [uploadingImages, setUploadingImages] = useState(false);
-  const [imageViewerOpen, setImageViewerOpen] = useState(false);
-  const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
   const [selectedOrderForWhatsApp, setSelectedOrderForWhatsApp] = useState<Order | null>(null);
-  const [currentView, setCurrentView] = useState<'list' | 'calendar'>('list');
+  const [currentView, setCurrentView] = useState<'list' | 'calendar' | 'grid'>('list');
   const [visibleOrders, setVisibleOrders] = useState(5);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [orderDetailsModalOpen, setOrderDetailsModalOpen] = useState(false);
+  const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
+  const [gridSelectedStatus, setGridSelectedStatus] = useState<string>('');
+  const [orderCounter, setOrderCounter] = useState(100);
 
   const [formData, setFormData] = useState({
     orderNumber: '',
@@ -81,11 +86,13 @@ const Orders = () => {
     deliveryDate: '',
     notes: '',
     measurements: {},
-    designImages: [] as string[]
+    designImages: [] as string[],
+    assignedStaff: [] as string[],
+    requiredMaterials: [] as any[]
   });
 
   const itemTypes = [
-    'Blouse', 'Lehenga', 'Saree', 'Kurti', 'Dress', 'Gown', 'Suit', 'Other'
+    'Blouse', 'Lehenga', 'Saree', 'Kurti', 'Dress', 'Gown', 'Suit', 'Add New Type'
   ];
 
   const statusOptions = [
@@ -100,7 +107,20 @@ const Orders = () => {
 
   useEffect(() => {
     fetchOrders();
+    loadOrderCounter();
   }, []);
+
+  const loadOrderCounter = () => {
+    const savedCounter = localStorage.getItem('orderCounter');
+    if (savedCounter) {
+      setOrderCounter(parseInt(savedCounter));
+    }
+  };
+
+  const saveOrderCounter = (counter: number) => {
+    localStorage.setItem('orderCounter', counter.toString());
+    setOrderCounter(counter);
+  };
 
   const fetchOrders = async () => {
     try {
@@ -128,12 +148,9 @@ const Orders = () => {
   };
 
   const generateOrderNumber = () => {
-    const date = new Date();
-    const year = date.getFullYear().toString().slice(-2);
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    return `SC${year}${month}${day}${random}`;
+    const newCounter = orderCounter + 1;
+    saveOrderCounter(newCounter);
+    return `SC${newCounter}`;
   };
 
   const createCustomerRecord = async (orderData: any) => {
@@ -156,6 +173,7 @@ const Orders = () => {
           customerType: 'regular',
           createdAt: serverTimestamp()
         });
+        console.log('New customer record created');
       } else {
         // Update existing customer
         const customerData = existingCustomer.data();
@@ -163,8 +181,10 @@ const Orders = () => {
           totalOrders: (customerData.totalOrders || 0) + 1,
           totalSpent: (customerData.totalSpent || 0) + orderData.totalAmount,
           lastOrderDate: orderData.orderDate,
+          measurements: { ...customerData.measurements, ...orderData.measurements },
           updatedAt: serverTimestamp()
         });
+        console.log('Existing customer record updated');
       }
     } catch (error) {
       console.error('Error creating/updating customer record:', error);
@@ -244,19 +264,21 @@ const Orders = () => {
         // Create customer record if new order
         await createCustomerRecord(orderData);
         
-        // Update inventory stock
-        try {
-          await updateInventoryStock([{
-            type: formData.itemType,
-            quantity: formData.quantity
-          }]);
-        } catch (inventoryError) {
-          console.warn('Inventory sync failed:', inventoryError);
+        // Deduct inventory for required materials
+        if (formData.requiredMaterials.length > 0) {
+          try {
+            await deductInventoryForOrder(formData.requiredMaterials.map(m => ({
+              type: m.name,
+              quantity: m.quantity
+            })));
+          } catch (inventoryError) {
+            console.warn('Inventory sync failed:', inventoryError);
+          }
         }
 
         toast({
           title: "Success",
-          description: "Order created successfully",
+          description: `Order #${orderData.orderNumber.slice(-3)} created successfully`,
         });
       }
 
@@ -290,7 +312,9 @@ const Orders = () => {
       deliveryDate: '',
       notes: '',
       measurements: {},
-      designImages: []
+      designImages: [],
+      assignedStaff: [],
+      requiredMaterials: []
     });
   };
 
@@ -321,7 +345,9 @@ const Orders = () => {
       deliveryDate: order.deliveryDate,
       notes: order.notes || '',
       measurements: order.measurements || {},
-      designImages: order.designImages || []
+      designImages: order.designImages || [],
+      assignedStaff: order.assignedStaff || [],
+      requiredMaterials: order.requiredMaterials || []
     });
     setIsDialogOpen(true);
   };
@@ -370,7 +396,7 @@ const Orders = () => {
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
       case 'received': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'in-progress': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+      case 'in-progress': return 'bg-orange-100 text-orange-700 border-orange-200';
       case 'ready': return 'bg-green-100 text-green-700 border-green-200';
       case 'delivered': return 'bg-purple-100 text-purple-700 border-purple-200';
       case 'cancelled': return 'bg-red-100 text-red-700 border-red-200';
@@ -378,15 +404,22 @@ const Orders = () => {
     }
   };
 
-  const openImageViewer = (images: string[], index: number = 0) => {
-    setSelectedImages(images);
-    setSelectedImageIndex(index);
-    setImageViewerOpen(true);
-  };
-
   const openWhatsAppModal = (order: Order) => {
     setSelectedOrderForWhatsApp(order);
     setWhatsappModalOpen(true);
+  };
+
+  const openOrderDetails = (order: Order) => {
+    setSelectedOrderForDetails(order);
+    setOrderDetailsModalOpen(true);
+  };
+
+  const handleGridViewOrderClick = (order: any) => {
+    if (order.status && order.status !== 'all') {
+      setGridSelectedStatus(order.status);
+    } else {
+      openOrderDetails(order);
+    }
   };
 
   const filterOrders = (orders: Order[]) => {
@@ -418,6 +451,11 @@ const Orders = () => {
       }
     }
 
+    // Grid view status filter
+    if (gridSelectedStatus && gridSelectedStatus !== 'all') {
+      filtered = filtered.filter(order => order.status === gridSelectedStatus);
+    }
+
     // Date filter
     if (dateFilter) {
       const filterDate = format(dateFilter, 'yyyy-MM-dd');
@@ -440,7 +478,7 @@ const Orders = () => {
   };
 
   const filteredOrders = filterOrders(orders);
-  const displayedOrders = filteredOrders.slice(0, visibleOrders);
+  const displayedOrders = currentView === 'list' ? filteredOrders.slice(0, visibleOrders) : filteredOrders;
 
   const loadMoreOrders = () => {
     setVisibleOrders(prev => prev + 5);
@@ -485,10 +523,14 @@ const Orders = () => {
           <p className="text-gray-600">Track custom orders and customer requests</p>
         </div>
         <div className="flex space-x-2">
-          <Tabs value={currentView} onValueChange={(value) => setCurrentView(value as 'list' | 'calendar')}>
+          <Tabs value={currentView} onValueChange={(value) => {
+            setCurrentView(value as 'list' | 'calendar' | 'grid');
+            setGridSelectedStatus('');
+          }}>
             <TabsList>
-              <TabsTrigger value="list">List View</TabsTrigger>
-              <TabsTrigger value="calendar">Calendar View</TabsTrigger>
+              <TabsTrigger value="list"><List className="h-4 w-4" /></TabsTrigger>
+              <TabsTrigger value="grid"><Grid3X3 className="h-4 w-4" /></TabsTrigger>
+              <TabsTrigger value="calendar"><CalendarIcon className="h-4 w-4" /></TabsTrigger>
             </TabsList>
           </Tabs>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -505,7 +547,7 @@ const Orders = () => {
                 New Order
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {editingOrder ? 'Edit Order' : 'Create New Order'}
@@ -561,7 +603,16 @@ const Orders = () => {
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <Label htmlFor="itemType">Item Type</Label>
-                      <Select value={formData.itemType} onValueChange={(value) => setFormData({...formData, itemType: value})}>
+                      <Select value={formData.itemType} onValueChange={(value) => {
+                        if (value === 'Add New Type') {
+                          const newType = prompt('Enter new item type:');
+                          if (newType && newType.trim()) {
+                            setFormData({...formData, itemType: newType.trim()});
+                          }
+                        } else {
+                          setFormData({...formData, itemType: value});
+                        }
+                      }}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select item type" />
                         </SelectTrigger>
@@ -632,6 +683,7 @@ const Orders = () => {
                         min="0"
                         value={formData.totalAmount}
                         onChange={(e) => setFormData({...formData, totalAmount: parseFloat(e.target.value) || 0})}
+                        placeholder="Enter total: ₹1500"
                         required
                       />
                     </div>
@@ -644,13 +696,26 @@ const Orders = () => {
                         max={formData.totalAmount}
                         value={formData.advanceAmount}
                         onChange={(e) => setFormData({...formData, advanceAmount: parseFloat(e.target.value) || 0})}
+                        placeholder="Advance paid: ₹500"
                       />
                     </div>
                   </div>
                 </div>
 
+                {/* Staff Assignment */}
+                <StaffAssignment
+                  selectedStaff={formData.assignedStaff}
+                  onChange={(staffIds) => setFormData({...formData, assignedStaff: staffIds})}
+                />
+
+                {/* Required Materials */}
+                <RequiredMaterials
+                  selectedMaterials={formData.requiredMaterials}
+                  onChange={(materials) => setFormData({...formData, requiredMaterials: materials})}
+                />
+
                 {/* Dynamic Measurements */}
-                {formData.itemType && (
+                {formData.itemType && formData.itemType !== 'Add New Type' && (
                   <DynamicMeasurements
                     itemType={formData.itemType}
                     measurements={formData.measurements}
@@ -779,6 +844,31 @@ const Orders = () => {
             console.log('Selected date:', date, 'Orders:', dayOrders);
           }}
         />
+      ) : currentView === 'grid' ? (
+        <Card className="border-0 shadow-md">
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle>Orders Overview</CardTitle>
+              {gridSelectedStatus && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setGridSelectedStatus('')}
+                >
+                  ← Back to Overview
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <OrderGridView
+              orders={orders}
+              onOrderClick={handleGridViewOrderClick}
+              onWhatsAppClick={openWhatsAppModal}
+              selectedStatus={gridSelectedStatus}
+            />
+          </CardContent>
+        </Card>
       ) : (
         <>
           {/* Filters */}
@@ -846,128 +936,198 @@ const Orders = () => {
             <CardContent>
               {displayedOrders.length > 0 ? (
                 <>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Order #</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>Contact</TableHead>
-                        <TableHead>Item</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Delivery</TableHead>
-                        <TableHead>Order Date</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {displayedOrders.map((order) => (
-                        <TableRow key={order.id}>
-                          <TableCell className="font-medium">#{order.orderNumber.slice(-4)}</TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{order.customerName}</div>
-                              <div className="text-sm text-gray-500">{order.customerEmail}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center space-x-2">
-                              <span className="text-sm">{order.customerPhone}</span>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => openWhatsAppModal(order)}
-                                className="text-green-600 hover:text-green-700"
-                              >
-                                <MessageSquare className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{order.itemType}</div>
-                              <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">₹{(order.totalAmount || 0).toLocaleString()}</div>
-                              <div className="text-sm text-gray-500">
-                                Balance: ₹{(order.remainingAmount || 0).toLocaleString()}
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Order #</TableHead>
+                          <TableHead>Customer</TableHead>
+                          <TableHead>Contact</TableHead>
+                          <TableHead>Item</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Delivery</TableHead>
+                          <TableHead>Order Date</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {displayedOrders.map((order) => (
+                          <TableRow key={order.id}>
+                            <TableCell className="font-medium">#{order.orderNumber.slice(-3)}</TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{order.customerName}</div>
+                                <div className="text-sm text-gray-500">{order.customerEmail}</div>
                               </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={getStatusColor(order.status)} variant="outline">
-                              {order.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{order.deliveryDate}</TableCell>
-                          <TableCell>
-                            <div className="text-sm text-gray-600">{order.orderDate}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex space-x-2">
-                              {order.designImages && order.designImages.length > 0 && (
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center space-x-2">
+                                <span className="text-sm">{order.customerPhone}</span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openWhatsAppModal(order)}
+                                  className="text-green-600 hover:text-green-700"
+                                >
+                                  <MessageSquare className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{order.itemType}</div>
+                                <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">₹{(order.totalAmount || 0).toLocaleString()}</div>
+                                {order.remainingAmount > 0 && (
+                                  <div className="text-sm text-red-600 font-medium">
+                                    Balance: ₹{(order.remainingAmount || 0).toLocaleString()}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={getStatusColor(order.status)} variant="outline">
+                                {order.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{order.deliveryDate}</TableCell>
+                            <TableCell>
+                              <div className="text-sm text-gray-600">{order.orderDate}</div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex space-x-2">
                                 <Button 
                                   size="sm" 
                                   variant="outline"
-                                  onClick={() => openImageViewer(order.designImages!, 0)}
+                                  onClick={() => openOrderDetails(order)}
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleEdit(order)}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              {order.status === 'received' && (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="text-blue-600"
-                                  onClick={() => updateStatus(order.id, 'in-progress')}
+                                  onClick={() => handleEdit(order)}
                                 >
-                                  Start
+                                  <Edit className="h-4 w-4" />
                                 </Button>
-                              )}
-                              {order.status === 'in-progress' && (
+                                {order.status === 'received' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-blue-600"
+                                    onClick={() => updateStatus(order.id, 'in-progress')}
+                                  >
+                                    Start
+                                  </Button>
+                                )}
+                                {order.status === 'in-progress' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-green-600"
+                                    onClick={() => updateStatus(order.id, 'ready')}
+                                  >
+                                    Ready
+                                  </Button>
+                                )}
+                                {order.status === 'ready' && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-purple-600"
+                                    onClick={() => updateStatus(order.id, 'delivered')}
+                                  >
+                                    Deliver
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  className="text-green-600"
-                                  onClick={() => updateStatus(order.id, 'ready')}
+                                  onClick={() => handleDelete(order.id)}
+                                  className="text-red-600 hover:text-red-700"
                                 >
-                                  Ready
+                                  <Trash2 className="h-4 w-4" />
                                 </Button>
-                              )}
-                              {order.status === 'ready' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-purple-600"
-                                  onClick={() => updateStatus(order.id, 'delivered')}
-                                >
-                                  Deliver
-                                </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleDelete(order.id)}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Mobile Card View */}
+                  <div className="md:hidden space-y-4">
+                    {displayedOrders.map((order) => (
+                      <Card key={order.id} className="p-4">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <div className="font-medium">#{order.orderNumber.slice(-3)}</div>
+                            <div className="text-lg font-semibold">{order.customerName}</div>
+                            <div className="text-sm text-gray-500">{order.itemType} • Qty: {order.quantity}</div>
+                          </div>
+                          <Badge className={getStatusColor(order.status)} variant="outline">
+                            {order.status}
+                          </Badge>
+                        </div>
+                        
+                        <div className="space-y-2 mb-4">
+                          <div className="text-sm">
+                            <span className="font-medium">Amount:</span> ₹{(order.totalAmount || 0).toLocaleString()}
+                          </div>
+                          {order.remainingAmount > 0 && (
+                            <div className="text-sm text-red-600 font-medium">
+                              Balance: ₹{(order.remainingAmount || 0).toLocaleString()}
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                          )}
+                          <div className="text-sm">
+                            <span className="font-medium">Order Date:</span> {order.orderDate}
+                          </div>
+                          <div className="text-sm">
+                            <span className="font-medium">Delivery:</span> {order.deliveryDate}
+                          </div>
+                        </div>
+
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openOrderDetails(order)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openWhatsAppModal(order)}
+                            className="text-green-600"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.open(`tel:${order.customerPhone}`)}
+                          >
+                            <Phone className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEdit(order)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
                   
                   {/* Load More Button */}
                   {visibleOrders < filteredOrders.length && (
@@ -1005,13 +1165,16 @@ const Orders = () => {
         </>
       )}
 
-      {/* Image Viewer */}
-      <ImageViewer
-        images={selectedImages}
-        currentIndex={selectedImageIndex}
-        isOpen={imageViewerOpen}
-        onClose={() => setImageViewerOpen(false)}
-        title="Order Design Images"
+      {/* Order Details Modal */}
+      <OrderDetailsModal
+        isOpen={orderDetailsModalOpen}
+        onClose={() => {
+          setOrderDetailsModalOpen(false);
+          setSelectedOrderForDetails(null);
+        }}
+        order={selectedOrderForDetails}
+        onWhatsAppClick={openWhatsAppModal}
+        onRefresh={fetchOrders}
       />
 
       {/* WhatsApp Message Modal */}
