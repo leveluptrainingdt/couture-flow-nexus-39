@@ -44,6 +44,7 @@ interface Order {
   designImages?: string[];
   notes?: string;
   createdAt: any;
+  updatedAt?: any;
 }
 
 const Orders = () => {
@@ -406,9 +407,12 @@ const Orders = () => {
       if (statusFilter === 'recent') {
         const fiveDaysAgo = new Date();
         fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-        filtered = filtered.filter(order => 
-          order.updatedAt && order.updatedAt.toDate() > fiveDaysAgo
-        );
+        filtered = filtered.filter(order => {
+          if (order.updatedAt && order.updatedAt.toDate) {
+            return order.updatedAt.toDate() > fiveDaysAgo;
+          }
+          return false;
+        });
       } else {
         filtered = filtered.filter(order => order.status === statusFilter);
       }
