@@ -1,3 +1,4 @@
+
 import { collection, query, where, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -48,7 +49,7 @@ export const updateInventoryStock = async (orderItems: OrderItem[]): Promise<{ s
       for (const inventoryDoc of inventorySnapshot.docs) {
         if (remainingQuantity <= 0) break;
         
-        const inventoryData = inventoryDoc.data();
+        const inventoryData = inventoryDoc.data() as InventoryItem;
         const availableQuantity = inventoryData.quantity;
         
         const deductQuantity = Math.min(remainingQuantity, availableQuantity);
@@ -89,12 +90,12 @@ export const deductInventoryForOrder = async (orderItems: OrderItem[]): Promise<
         ));
         
         if (!inventoryDoc.empty) {
-          const doc = inventoryDoc.docs[0];
-          const inventoryData = doc.data();
+          const docRef = inventoryDoc.docs[0];
+          const inventoryData = docRef.data() as InventoryItem;
           const availableQuantity = inventoryData.quantity;
           
           if (availableQuantity >= orderItem.quantity) {
-            await updateDoc(doc.ref, {
+            await updateDoc(docRef.ref, {
               quantity: availableQuantity - orderItem.quantity,
               updatedAt: serverTimestamp()
             });
@@ -134,7 +135,7 @@ export const deductInventoryForOrder = async (orderItems: OrderItem[]): Promise<
       for (const inventoryDoc of inventorySnapshot.docs) {
         if (remainingQuantity <= 0) break;
         
-        const inventoryData = inventoryDoc.data();
+        const inventoryData = inventoryDoc.data() as InventoryItem;
         const availableQuantity = inventoryData.quantity;
         
         const deductQuantity = Math.min(remainingQuantity, availableQuantity);
@@ -178,7 +179,7 @@ export const checkInventoryAvailability = async (orderItems: OrderItem[]): Promi
       }
       
       const totalAvailable = inventorySnapshot.docs.reduce(
-        (sum, doc) => sum + doc.data().quantity,
+        (sum, doc) => sum + (doc.data() as InventoryItem).quantity,
         0
       );
       
