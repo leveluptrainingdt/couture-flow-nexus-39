@@ -1,4 +1,3 @@
-
 export interface BillItem {
   id: string;
   description: string;

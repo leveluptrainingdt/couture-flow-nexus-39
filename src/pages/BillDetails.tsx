@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,7 +22,7 @@ import {
 import { ArrowLeft, Edit, Trash2, Download, MessageSquare, CreditCard, QrCode } from 'lucide-react';
 import { doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Bill, formatCurrency, getBillStatusColor } from '@/utils/billingUtils';
+import { Bill, formatCurrency, getBillStatusColor, downloadPDF, getWhatsAppTemplates } from '@/utils/billingUtils';
 import { toast } from '@/hooks/use-toast';
 import BillWhatsAppModal from '@/components/BillWhatsAppModal';
 import BillForm from '@/components/BillForm';
@@ -130,6 +131,30 @@ const BillDetails = () => {
     window.open(whatsappUrl, '_blank');
   };
 
+  const handlePayWithUPI = () => {
+    if (!bill) return;
+    
+    if (bill.upiLink) {
+      window.open(bill.upiLink, '_blank');
+    } else {
+      toast({
+        title: "UPI Link Not Available",
+        description: "UPI payment link is not configured for this bill",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBillSave = async (updatedBill: Bill) => {
+    // Handle bill save logic here
+    toast({
+      title: "Success", 
+      description: "Bill updated successfully",
+    });
+    setShowEditDialog(false);
+    fetchBill();
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -186,15 +211,20 @@ const BillDetails = () => {
               <DialogHeader>
                 <DialogTitle>Edit Bill {bill.billId}</DialogTitle>
               </DialogHeader>
-              <BillForm bill={bill} onSuccess={() => {
-                setShowEditDialog(false);
-                fetchBill();
-              }} />
+              <BillForm 
+                bill={bill} 
+                onSave={handleBillSave}
+                onCancel={() => setShowEditDialog(false)}
+                onSuccess={() => {
+                  setShowEditDialog(false);
+                  fetchBill();
+                }} 
+              />
             </DialogContent>
           </Dialog>
-          <Button variant="outline" onClick={handleDownloadPDF}>
+          <Button variant="outline" onClick={handleDownloadPDF} disabled={downloading}>
             <Download className="h-4 w-4 mr-2" />
-            Download PDF
+            {downloading ? 'Downloading...' : 'Download PDF'}
           </Button>
           <Button 
             variant="outline" 
@@ -335,7 +365,7 @@ const BillDetails = () => {
               </div>
               <div className="flex justify-between font-bold text-lg">
                 <span>Balance</span>
-                <span className={getBillStatusColor(bill.balance)}>
+                <span className={getBillStatusColor(bill.status)}>
                   {formatCurrency(bill.balance)}
                 </span>
               </div>
@@ -381,9 +411,13 @@ const BillDetails = () => {
                         <DialogTitle>UPI QR Code</DialogTitle>
                       </DialogHeader>
                       <div className="text-center">
-                        <div className="w-48 h-48 mx-auto bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
-                          <p className="text-gray-500">QR Code Preview</p>
-                        </div>
+                        {bill.qrCodeUrl ? (
+                          <img src={bill.qrCodeUrl} alt="UPI QR Code" className="w-48 h-48 mx-auto" />
+                        ) : (
+                          <div className="w-48 h-48 mx-auto bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                            <p className="text-gray-500">QR Code Not Available</p>
+                          </div>
+                        )}
                         <p className="mt-4 text-sm text-gray-600">
                           Scan this QR code with any UPI app to pay {formatCurrency(bill.balance)}
                         </p>

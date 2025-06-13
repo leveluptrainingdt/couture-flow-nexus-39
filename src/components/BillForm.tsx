@@ -6,11 +6,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2 } from 'lucide-react';
 import { BillItem, BillBreakdown, BankDetails, calculateBillTotals, generateUPILink, generateQRCodeDataURL, Bill } from '@/utils/billingUtils';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { CalendarIcon } from "@radix-ui/react-icons"
-import { cn } from "@/lib/utils"
-import { format } from "date-fns"
 import { DatePicker } from '@/components/ui/date-picker';
 import { toast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -18,8 +13,10 @@ import { collection, getDocs } from 'firebase/firestore';
 
 interface BillFormProps {
   billId?: string;
+  bill?: Bill;
   onSave: (bill: Bill) => void;
   onCancel: () => void;
+  onSuccess?: () => void;
 }
 
 interface Customer {
@@ -30,43 +27,43 @@ interface Customer {
   address?: string;
 }
 
-const BillForm = ({ billId, onSave, onCancel }: BillFormProps) => {
-  const [billIdState, setBillIdState] = useState(billId || '');
-  const [customerId, setCustomerId] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [customerEmail, setCustomerEmail] = useState<string | undefined>('');
-  const [customerAddress, setCustomerAddress] = useState<string | undefined>('');
-  const [orderId, setOrderId] = useState<string | undefined>('');
-  const [items, setItems] = useState<BillItem[]>([]);
-  const [breakdown, setBreakdown] = useState<BillBreakdown>({
+const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) => {
+  const [billIdState, setBillIdState] = useState(billId || bill?.billId || '');
+  const [customerId, setCustomerId] = useState(bill?.customerId || '');
+  const [customerName, setCustomerName] = useState(bill?.customerName || '');
+  const [customerPhone, setCustomerPhone] = useState(bill?.customerPhone || '');
+  const [customerEmail, setCustomerEmail] = useState<string | undefined>(bill?.customerEmail || '');
+  const [customerAddress, setCustomerAddress] = useState<string | undefined>(bill?.customerAddress || '');
+  const [orderId, setOrderId] = useState<string | undefined>(bill?.orderId || '');
+  const [items, setItems] = useState<BillItem[]>(bill?.items || []);
+  const [breakdown, setBreakdown] = useState<BillBreakdown>(bill?.breakdown || {
     fabric: 0,
     stitching: 0,
     accessories: 0,
     customization: 0,
     otherCharges: 0,
   });
-  const [subtotal, setSubtotal] = useState(0);
-  const [gstPercent, setGstPercent] = useState(5);
-  const [gstAmount, setGstAmount] = useState(0);
-  const [discount, setDiscount] = useState(0);
-  const [discountType, setDiscountType] = useState<'amount' | 'percentage'>('amount');
-  const [totalAmount, setTotalAmount] = useState(0);
-  const [paidAmount, setPaidAmount] = useState(0);
-  const [balance, setBalance] = useState(0);
-  const [status, setStatus] = useState<'paid' | 'partial' | 'unpaid'>('unpaid');
-  const [date, setDate] = useState<Date | undefined>(new Date());
-  const [dueDate, setDueDate] = useState<Date | undefined>();
-  const [bankDetails, setBankDetails] = useState<BankDetails>({
+  const [subtotal, setSubtotal] = useState(bill?.subtotal || 0);
+  const [gstPercent, setGstPercent] = useState(bill?.gstPercent || 5);
+  const [gstAmount, setGstAmount] = useState(bill?.gstAmount || 0);
+  const [discount, setDiscount] = useState(bill?.discount || 0);
+  const [discountType, setDiscountType] = useState<'amount' | 'percentage'>(bill?.discountType || 'amount');
+  const [totalAmount, setTotalAmount] = useState(bill?.totalAmount || 0);
+  const [paidAmount, setPaidAmount] = useState(bill?.paidAmount || 0);
+  const [balance, setBalance] = useState(bill?.balance || 0);
+  const [status, setStatus] = useState<'paid' | 'partial' | 'unpaid'>(bill?.status || 'unpaid');
+  const [date, setDate] = useState<Date | undefined>(bill?.date?.toDate?.() || new Date());
+  const [dueDate, setDueDate] = useState<Date | undefined>(bill?.dueDate?.toDate?.() || undefined);
+  const [bankDetails, setBankDetails] = useState<BankDetails>(bill?.bankDetails || {
     accountName: '',
     accountNumber: '',
     ifsc: '',
     bankName: '',
   });
-  const [upiId, setUpiId] = useState('');
-  const [upiLink, setUpiLink] = useState('');
-  const [qrCodeUrl, setQrCodeUrl] = useState('');
-  const [notes, setNotes] = useState<string | undefined>('');
+  const [upiId, setUpiId] = useState(bill?.upiId || '');
+  const [upiLink, setUpiLink] = useState(bill?.upiLink || '');
+  const [qrCodeUrl, setQrCodeUrl] = useState(bill?.qrCodeUrl || '');
+  const [notes, setNotes] = useState<string | undefined>(bill?.notes || '');
   const [customers, setCustomers] = useState<Customer[]>([]);
 
   useEffect(() => {
@@ -191,7 +188,7 @@ const BillForm = ({ billId, onSave, onCancel }: BillFormProps) => {
   const removeBreakdownCharge = (chargeType: keyof BillBreakdown) => {
     setBreakdown(prev => {
       const { [chargeType]: removed, ...rest } = prev;
-      return rest;
+      return { ...rest } as BillBreakdown;
     });
   };
 
@@ -220,7 +217,7 @@ const BillForm = ({ billId, onSave, onCancel }: BillFormProps) => {
     calculateTotals();
 
     const billData: Bill = {
-      id: billId || uuidv4(),
+      id: billId || bill?.id || uuidv4(),
       billId: billIdState,
       customerId,
       customerName,
@@ -246,11 +243,14 @@ const BillForm = ({ billId, onSave, onCancel }: BillFormProps) => {
       upiLink,
       qrCodeUrl,
       notes,
-      createdAt: new Date(),
+      createdAt: bill?.createdAt || new Date(),
       updatedAt: new Date(),
     };
 
     onSave(billData);
+    if (onSuccess) {
+      onSuccess();
+    }
   };
 
   return (
@@ -258,7 +258,7 @@ const BillForm = ({ billId, onSave, onCancel }: BillFormProps) => {
       {/* Header Section */}
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-900">
-          {billId ? 'Edit Bill' : 'Create New Bill'}
+          {billId || bill ? 'Edit Bill' : 'Create New Bill'}
         </h2>
         <p className="text-gray-600">
           Manage your billing details and customer information here.
@@ -311,6 +311,7 @@ const BillForm = ({ billId, onSave, onCancel }: BillFormProps) => {
             </Button>
           </div>
 
+          {/* Items table */}
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead>
