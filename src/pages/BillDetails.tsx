@@ -24,7 +24,7 @@ import { doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Bill, formatCurrency, getBillStatusColor } from '@/utils/billingUtils';
 import { toast } from '@/hooks/use-toast';
-import WhatsAppMessageModal from '@/components/WhatsAppMessageModal';
+import BillWhatsAppModal from '@/components/BillWhatsAppModal';
 import BillForm from '@/components/BillForm';
 
 const BillDetails = () => {
@@ -382,7 +382,7 @@ const BillDetails = () => {
 
       {/* WhatsApp Modal */}
       {showWhatsAppModal && (
-        <WhatsAppMessageModal
+        <BillWhatsAppModal
           isOpen={showWhatsAppModal}
           onClose={() => setShowWhatsAppModal(false)}
           customerName={bill.customerName}
