@@ -20,7 +20,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ArrowLeft, Edit, Trash2, Download, MessageSquare, CreditCard, QrCode } from 'lucide-react';
-import { doc, getDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Bill, formatCurrency, getBillStatusColor, downloadPDF, getWhatsAppTemplates } from '@/utils/billingUtils';
 import { toast } from '@/hooks/use-toast';
@@ -112,23 +112,30 @@ const BillDetails = () => {
     }
   };
 
-  const handleWhatsAppShare = (templateType: string) => {
-    if (!bill) return;
-    
-    const templates = getWhatsAppTemplates(
-      bill.customerName,
-      bill.billId,
-      bill.totalAmount,
-      bill.balance,
-      bill.upiLink,
-      bill.dueDate ? new Date(bill.dueDate.toDate()).toLocaleDateString() : undefined
-    );
-    
-    const message = templates[templateType as keyof typeof templates] || templates.billDelivery;
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/${bill.customerPhone}?text=${encodedMessage}`;
-    
-    window.open(whatsappUrl, '_blank');
+  const handleBillSave = async (updatedBill: Bill) => {
+    try {
+      // Update bill in Firestore
+      await updateDoc(doc(db, 'bills', updatedBill.id), {
+        ...updatedBill,
+        updatedAt: new Date(),
+      });
+      
+      toast({
+        title: "Success",
+        description: `Bill ${updatedBill.billId} updated successfully`,
+      });
+      
+      setShowEditDialog(false);
+      // Refresh bill data
+      await fetchBill();
+    } catch (error) {
+      console.error('Error updating bill:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update bill",
+        variant: "destructive",
+      });
+    }
   };
 
   const handlePayWithUPI = () => {
@@ -145,19 +152,9 @@ const BillDetails = () => {
     }
   };
 
-  const handleBillSave = async (updatedBill: Bill) => {
-    // Handle bill save logic here
-    toast({
-      title: "Success", 
-      description: "Bill updated successfully",
-    });
-    setShowEditDialog(false);
-    fetchBill();
-  };
-
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-4 sm:p-6">
         <div className="flex items-center gap-4">
           <Button variant="outline" onClick={() => navigate('/billing')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -171,7 +168,7 @@ const BillDetails = () => {
 
   if (!bill) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-4 sm:p-6">
         <div className="flex items-center gap-4">
           <Button variant="outline" onClick={() => navigate('/billing')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -184,30 +181,32 @@ const BillDetails = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" onClick={() => navigate('/billing')}>
+    <div className="space-y-4 sm:space-y-6 p-4 sm:p-6">
+      {/* Header - Responsive */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <Button variant="outline" onClick={() => navigate('/billing')} size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Billing
+            Back
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Bill {bill.billId}</h1>
-            <p className="text-gray-500">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Bill {bill.billId}</h1>
+            <p className="text-sm sm:text-base text-gray-500">
               Created on {bill.date?.toDate?.()?.toLocaleDateString() || 'N/A'}
             </p>
           </div>
         </div>
+        
+        {/* Action Buttons - Responsive */}
         <div className="flex flex-wrap gap-2">
           <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" size="sm">
                 <Edit className="h-4 w-4 mr-2" />
                 Edit
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-[95vw] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Edit Bill {bill.billId}</DialogTitle>
               </DialogHeader>
@@ -222,167 +221,198 @@ const BillDetails = () => {
               />
             </DialogContent>
           </Dialog>
-          <Button variant="outline" onClick={handleDownloadPDF} disabled={downloading}>
+          
+          <Button variant="outline" onClick={handleDownloadPDF} disabled={downloading} size="sm">
             <Download className="h-4 w-4 mr-2" />
-            {downloading ? 'Downloading...' : 'Download PDF'}
+            {downloading ? 'Downloading...' : 'PDF'}
           </Button>
+          
           <Button 
             variant="outline" 
             onClick={() => setShowWhatsAppModal(true)}
             className="text-green-600"
+            size="sm"
           >
             <MessageSquare className="h-4 w-4 mr-2" />
             Share
           </Button>
-          <Button variant="outline" onClick={handleDelete} className="text-red-600">
+          
+          <Button variant="outline" onClick={handleDelete} className="text-red-600" size="sm">
             <Trash2 className="h-4 w-4 mr-2" />
             Delete
           </Button>
         </div>
       </div>
 
-      {/* Bill Content */}
-      <div className="max-w-4xl mx-auto">
+      {/* Bill Content - Responsive Layout */}
+      <div className="max-w-6xl mx-auto">
         {/* Header Card */}
-        <Card className="mb-6">
+        <Card className="mb-4 sm:mb-6">
           <CardHeader className="text-center bg-gradient-to-r from-purple-600 to-blue-600 text-white">
-            <CardTitle className="text-2xl">Swetha's Couture</CardTitle>
-            <p className="text-purple-100">Premium Tailoring & Fashion</p>
+            <CardTitle className="text-xl sm:text-2xl">Swetha's Couture</CardTitle>
+            <p className="text-purple-100 text-sm sm:text-base">Premium Tailoring & Fashion</p>
           </CardHeader>
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <CardContent className="pt-4 sm:pt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
               <div>
-                <h3 className="font-semibold mb-2">Bill Details</h3>
-                <p><strong>Bill No:</strong> {bill.billId}</p>
-                <p><strong>Date:</strong> {bill.date?.toDate?.()?.toLocaleDateString() || 'N/A'}</p>
-                {bill.orderId && <p><strong>Order ID:</strong> {bill.orderId}</p>}
+                <h3 className="font-semibold mb-2 text-sm sm:text-base">Bill Details</h3>
+                <div className="text-sm space-y-1">
+                  <p><strong>Bill No:</strong> {bill.billId}</p>
+                  <p><strong>Date:</strong> {bill.date?.toDate?.()?.toLocaleDateString() || 'N/A'}</p>
+                  {bill.orderId && <p><strong>Order ID:</strong> {bill.orderId}</p>}
+                </div>
               </div>
               <div>
-                <h3 className="font-semibold mb-2">Customer Details</h3>
-                <p><strong>Name:</strong> {bill.customerName}</p>
-                <p><strong>Phone:</strong> {bill.customerPhone}</p>
-                {bill.customerEmail && <p><strong>Email:</strong> {bill.customerEmail}</p>}
-                {bill.customerAddress && <p><strong>Address:</strong> {bill.customerAddress}</p>}
+                <h3 className="font-semibold mb-2 text-sm sm:text-base">Customer Details</h3>
+                <div className="text-sm space-y-1">
+                  <p><strong>Name:</strong> {bill.customerName}</p>
+                  <p><strong>Phone:</strong> {bill.customerPhone}</p>
+                  {bill.customerEmail && <p><strong>Email:</strong> {bill.customerEmail}</p>}
+                  {bill.customerAddress && <p><strong>Address:</strong> {bill.customerAddress}</p>}
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Items Table */}
-        <Card className="mb-6">
+        {/* Items Table - Responsive */}
+        <Card className="mb-4 sm:mb-6">
           <CardHeader>
-            <CardTitle>Bill Items</CardTitle>
+            <CardTitle className="text-lg">Bill Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Rate</TableHead>
-                  <TableHead>Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {bill.items.map((item, index) => (
-                  <TableRow key={index}>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell>{item.quantity}</TableCell>
-                    <TableCell>{formatCurrency(item.rate)}</TableCell>
-                    <TableCell>{formatCurrency(item.amount)}</TableCell>
+            {/* Mobile Card View */}
+            <div className="block sm:hidden space-y-3">
+              {bill.items.map((item, index) => (
+                <div key={index} className="border rounded-lg p-3 bg-gray-50">
+                  <div className="font-medium">{item.description}</div>
+                  <div className="text-sm text-gray-600 mt-1">
+                    Qty: {item.quantity} × Rate: {formatCurrency(item.rate)}
+                  </div>
+                  <div className="text-right font-medium text-purple-600">
+                    {formatCurrency(item.amount)}
+                  </div>
+                </div>
+              ))}
+              <div className="border-t pt-2 flex justify-between font-semibold">
+                <span>Items Subtotal</span>
+                <span>{formatCurrency(bill.items.reduce((sum, item) => sum + item.amount, 0))}</span>
+              </div>
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden sm:block overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Rate</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
                   </TableRow>
-                ))}
-                <TableRow>
-                  <TableCell colSpan={3} className="font-semibold">Items Subtotal</TableCell>
-                  <TableCell className="font-semibold">
-                    {formatCurrency(bill.items.reduce((sum, item) => sum + item.amount, 0))}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        {/* Breakdown */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Charges Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableBody>
-                <TableRow>
-                  <TableCell>Fabric</TableCell>
-                  <TableCell>{formatCurrency(bill.breakdown.fabric)}</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Stitching</TableCell>
-                  <TableCell>{formatCurrency(bill.breakdown.stitching)}</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Accessories</TableCell>
-                  <TableCell>{formatCurrency(bill.breakdown.accessories)}</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Customization</TableCell>
-                  <TableCell>{formatCurrency(bill.breakdown.customization)}</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Other Charges</TableCell>
-                  <TableCell>{formatCurrency(bill.breakdown.otherCharges)}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        {/* Summary */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Bill Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>{formatCurrency(bill.subtotal)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>GST ({bill.gstPercent}%)</span>
-                <span>{formatCurrency(bill.gstAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Discount</span>
-                <span>-{formatCurrency(bill.discount)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg border-t pt-2">
-                <span>Total Amount</span>
-                <span>{formatCurrency(bill.totalAmount)}</span>
-              </div>
-              <div className="flex justify-between text-lg">
-                <span>Paid Amount</span>
-                <span className="text-green-600">{formatCurrency(bill.paidAmount)}</span>
-              </div>
-              <div className="flex justify-between font-bold text-lg">
-                <span>Balance</span>
-                <span className={getBillStatusColor(bill.status)}>
-                  {formatCurrency(bill.balance)}
-                </span>
-              </div>
+                </TableHeader>
+                <TableBody>
+                  {bill.items.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(item.rate)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(item.amount)}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow>
+                    <TableCell colSpan={3} className="font-semibold">Items Subtotal</TableCell>
+                    <TableCell className="font-semibold text-right">
+                      {formatCurrency(bill.items.reduce((sum, item) => sum + item.amount, 0))}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
             </div>
           </CardContent>
         </Card>
 
-        {/* Payment Section */}
-        <Card className="mb-6">
+        {/* Breakdown and Summary - Responsive Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
+          {/* Breakdown */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Charges Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Fabric</span>
+                  <span>{formatCurrency(bill.breakdown.fabric)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Stitching</span>
+                  <span>{formatCurrency(bill.breakdown.stitching)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Accessories</span>
+                  <span>{formatCurrency(bill.breakdown.accessories)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Customization</span>
+                  <span>{formatCurrency(bill.breakdown.customization)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Other Charges</span>
+                  <span>{formatCurrency(bill.breakdown.otherCharges)}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Bill Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal</span>
+                  <span>{formatCurrency(bill.subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>GST ({bill.gstPercent}%)</span>
+                  <span>{formatCurrency(bill.gstAmount)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Discount</span>
+                  <span>-{formatCurrency(bill.discount)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-base sm:text-lg border-t pt-2">
+                  <span>Total Amount</span>
+                  <span className="text-purple-600">{formatCurrency(bill.totalAmount)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Paid Amount</span>
+                  <span className="text-green-600">{formatCurrency(bill.paidAmount)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-base sm:text-lg">
+                  <span>Balance</span>
+                  <span className={getBillStatusColor(bill.status).includes('red') ? 'text-red-600' : 'text-green-600'}>
+                    {formatCurrency(bill.balance)}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Payment Section - Responsive */}
+        <Card className="mb-4 sm:mb-6">
           <CardHeader>
-            <CardTitle>Payment Information</CardTitle>
+            <CardTitle className="text-lg">Payment Information</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
               {/* Bank Details */}
               <div>
-                <h3 className="font-semibold mb-4">Bank Transfer</h3>
+                <h3 className="font-semibold mb-3 text-sm sm:text-base">Bank Transfer</h3>
                 <div className="space-y-2 text-sm">
                   <p><strong>Account Name:</strong> {bill.bankDetails.accountName}</p>
                   <p><strong>Account Number:</strong> {bill.bankDetails.accountNumber}</p>
@@ -393,20 +423,20 @@ const BillDetails = () => {
 
               {/* UPI Payment */}
               <div>
-                <h3 className="font-semibold mb-4">UPI Payment</h3>
-                <div className="space-y-4">
-                  <Button onClick={handlePayWithUPI} className="w-full">
+                <h3 className="font-semibold mb-3 text-sm sm:text-base">UPI Payment</h3>
+                <div className="space-y-3">
+                  <Button onClick={handlePayWithUPI} className="w-full" size="sm">
                     <CreditCard className="h-4 w-4 mr-2" />
                     Pay with UPI
                   </Button>
                   <Dialog open={showQRCode} onOpenChange={setShowQRCode}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" className="w-full">
+                      <Button variant="outline" className="w-full" size="sm">
                         <QrCode className="h-4 w-4 mr-2" />
                         Show QR Code
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="max-w-sm">
                       <DialogHeader>
                         <DialogTitle>UPI QR Code</DialogTitle>
                       </DialogHeader>
@@ -415,10 +445,10 @@ const BillDetails = () => {
                           <img src={bill.qrCodeUrl} alt="UPI QR Code" className="w-48 h-48 mx-auto" />
                         ) : (
                           <div className="w-48 h-48 mx-auto bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
-                            <p className="text-gray-500">QR Code Not Available</p>
+                            <p className="text-gray-500 text-sm">QR Code Not Available</p>
                           </div>
                         )}
-                        <p className="mt-4 text-sm text-gray-600">
+                        <p className="mt-4 text-xs sm:text-sm text-gray-600">
                           Scan this QR code with any UPI app to pay {formatCurrency(bill.balance)}
                         </p>
                       </div>
@@ -433,8 +463,8 @@ const BillDetails = () => {
         {/* Footer */}
         <Card>
           <CardContent className="pt-6 text-center">
-            <p className="text-gray-600 mb-2">Thank you for choosing Swetha's Couture!</p>
-            <p className="text-sm text-gray-500">
+            <p className="text-gray-600 mb-2 text-sm sm:text-base">Thank you for choosing Swetha's Couture!</p>
+            <p className="text-xs sm:text-sm text-gray-500">
               For any queries, please contact us. Payment due within 7 days.
             </p>
           </CardContent>

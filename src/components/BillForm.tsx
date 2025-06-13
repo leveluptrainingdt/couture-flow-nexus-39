@@ -1,15 +1,18 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Edit3 } from 'lucide-react';
 import { BillItem, BillBreakdown, BankDetails, calculateBillTotals, generateUPILink, generateQRCodeDataURL, Bill } from '@/utils/billingUtils';
 import { DatePicker } from '@/components/ui/date-picker';
 import { toast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 
 interface BillFormProps {
   billId?: string;
@@ -27,7 +30,19 @@ interface Customer {
   address?: string;
 }
 
+interface InventoryItem {
+  id: string;
+  itemName: string;
+  stockQty: number;
+  category?: string;
+}
+
 const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) => {
+  // Customer selection state
+  const [isCustomerLocked, setIsCustomerLocked] = useState(!!bill);
+  const [showChangeCustomer, setShowChangeCustomer] = useState(false);
+  
+  // Form state
   const [billIdState, setBillIdState] = useState(billId || bill?.billId || '');
   const [customerId, setCustomerId] = useState(bill?.customerId || '');
   const [customerName, setCustomerName] = useState(bill?.customerName || '');
@@ -44,7 +59,7 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
     otherCharges: 0,
   });
   const [subtotal, setSubtotal] = useState(bill?.subtotal || 0);
-  const [gstPercent, setGstPercent] = useState(bill?.gstPercent || 5);
+  const [gstPercent, setGstPercent] = useState(bill?.gstPercent || 0);
   const [gstAmount, setGstAmount] = useState(bill?.gstAmount || 0);
   const [discount, setDiscount] = useState(bill?.discount || 0);
   const [discountType, setDiscountType] = useState<'amount' | 'percentage'>(bill?.discountType || 'amount');
@@ -55,44 +70,85 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
   const [date, setDate] = useState<Date | undefined>(bill?.date?.toDate?.() || new Date());
   const [dueDate, setDueDate] = useState<Date | undefined>(bill?.dueDate?.toDate?.() || undefined);
   const [bankDetails, setBankDetails] = useState<BankDetails>(bill?.bankDetails || {
-    accountName: '',
-    accountNumber: '',
-    ifsc: '',
-    bankName: '',
+    accountName: 'Swetha\'s Couture',
+    accountNumber: '1234567890',
+    ifsc: 'HDFC0001234',
+    bankName: 'HDFC Bank',
   });
-  const [upiId, setUpiId] = useState(bill?.upiId || '');
+  const [upiId, setUpiId] = useState(bill?.upiId || '9849834102@ybl');
   const [upiLink, setUpiLink] = useState(bill?.upiLink || '');
   const [qrCodeUrl, setQrCodeUrl] = useState(bill?.qrCodeUrl || '');
+  const [qrAmount, setQrAmount] = useState(bill?.balance || 0); // New QR amount field
   const [notes, setNotes] = useState<string | undefined>(bill?.notes || '');
+  
+  // Data collections
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  
+  // UI state
+  const [showNewItemModal, setShowNewItemModal] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState('');
+  const [newItemStock, setNewItemStock] = useState(0);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
+  // Fetch data on mount
   useEffect(() => {
-    const fetchCustomers = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'customers'));
-        const customerList: Customer[] = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          name: doc.data().name,
-          phone: doc.data().phone,
-          email: doc.data().email,
-          address: doc.data().address,
-        }));
-        setCustomers(customerList);
-      } catch (error) {
-        console.error('Error fetching customers:', error);
-        toast({
-          title: "Error Fetching Customers",
-          description: "Failed to load customer data.",
-          variant: "destructive",
-        });
-      }
-    };
-
     fetchCustomers();
+    fetchInventory();
   }, []);
 
+  // Set QR amount to balance when balance changes
   useEffect(() => {
-    if (customerId) {
+    if (!bill || !billId) {
+      setQrAmount(balance);
+    }
+  }, [balance, bill, billId]);
+
+  const fetchCustomers = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'customers'));
+      const customerList: Customer[] = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name,
+        phone: doc.data().phone,
+        email: doc.data().email,
+        address: doc.data().address,
+      }));
+      setCustomers(customerList);
+    } catch (error) {
+      console.error('Error fetching customers:', error);
+      toast({
+        title: "Error Fetching Customers",
+        description: "Failed to load customer data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const fetchInventory = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'inventory'));
+      const inventoryList: InventoryItem[] = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        itemName: doc.data().itemName || doc.data().name,
+        stockQty: doc.data().stockQty || doc.data().quantity || 0,
+        category: doc.data().category,
+      }));
+      setInventory(inventoryList);
+    } catch (error) {
+      console.error('Error fetching inventory:', error);
+      toast({
+        title: "Error Fetching Inventory",
+        description: "Failed to load inventory data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Customer selection logic
+  useEffect(() => {
+    if (customerId && !showChangeCustomer) {
       const selectedCustomer = customers.find(customer => customer.id === customerId);
       if (selectedCustomer) {
         setCustomerName(selectedCustomer.name);
@@ -100,22 +156,33 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
         setCustomerEmail(selectedCustomer.email);
         setCustomerAddress(selectedCustomer.address);
       }
-    } else {
-      setCustomerName('');
-      setCustomerPhone('');
-      setCustomerEmail('');
-      setCustomerAddress('');
     }
-  }, [customerId, customers]);
+  }, [customerId, customers, showChangeCustomer]);
 
+  // Calculations
   useEffect(() => {
-    const { subtotal: newSubtotal, gstAmount: newGstAmount, totalAmount: newTotalAmount, discountAmount } = calculateBillTotals(items, breakdown, gstPercent, discount, discountType);
+    const gstPercentValue = Number(gstPercent) || 0;
+    const { subtotal: newSubtotal, gstAmount: newGstAmount, totalAmount: newTotalAmount } = calculateBillTotals(
+      items, 
+      breakdown, 
+      gstPercentValue, 
+      discount, 
+      discountType
+    );
     setSubtotal(newSubtotal);
-    setGstAmount(newGstAmount);
+    setGstAmount(gstPercentValue === 0 ? 0 : newGstAmount);
     setTotalAmount(newTotalAmount);
     setBalance(newTotalAmount - paidAmount);
+
+    // Validation
+    const errors: Record<string, string> = {};
+    if (paidAmount > newTotalAmount) {
+      errors.paidAmount = 'Paid amount cannot exceed total amount';
+    }
+    setValidationErrors(errors);
   }, [items, breakdown, gstPercent, discount, discountType, paidAmount]);
 
+  // Status calculation
   useEffect(() => {
     setBalance(totalAmount - paidAmount);
     setStatus(
@@ -123,9 +190,10 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
     );
   }, [totalAmount, paidAmount]);
 
+  // UPI and QR code generation
   const generateUpiLinkAndQrCode = useCallback(async () => {
-    if (upiId && customerName && totalAmount && billIdState) {
-      const newUpiLink = generateUPILink(upiId, customerName, totalAmount, billIdState);
+    if (upiId && customerName && qrAmount && billIdState) {
+      const newUpiLink = generateUPILink(upiId, customerName, qrAmount, billIdState);
       setUpiLink(newUpiLink);
       try {
         const qrCodeDataURL = await generateQRCodeDataURL(newUpiLink);
@@ -143,12 +211,13 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
       setUpiLink('');
       setQrCodeUrl('');
     }
-  }, [upiId, customerName, totalAmount, billIdState]);
+  }, [upiId, customerName, qrAmount, billIdState]);
 
   useEffect(() => {
     generateUpiLinkAndQrCode();
   }, [generateUpiLinkAndQrCode]);
 
+  // Item management
   const addItem = () => {
     setItems([...items, {
       id: Date.now().toString(),
@@ -181,40 +250,78 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
     }));
   };
 
-  const addBredownCharge = (chargeType: keyof BillBreakdown, value: number) => {
+  const updateBreakdown = (chargeType: keyof BillBreakdown, value: number) => {
     setBreakdown(prev => ({ ...prev, [chargeType]: value }));
   };
 
-  const removeBreakdownCharge = (chargeType: keyof BillBreakdown) => {
-    setBreakdown(prev => {
-      const { [chargeType]: removed, ...rest } = prev;
-      return { ...rest } as BillBreakdown;
-    });
-  };
-
-  const updateBreakdownCharge = (chargeType: keyof BillBreakdown, value: number) => {
-    setBreakdown(prev => ({ ...prev, [chargeType]: value }));
-  };
-
-  const calculateTotals = () => {
-    const itemsTotal = items.reduce((sum, item) => sum + item.amount, 0);
-    const breakdownTotal = Object.values(breakdown).reduce((sum, value) => sum + value, 0);
-    const subtotal = itemsTotal + breakdownTotal;
-    const gstAmount = (subtotal * gstPercent) / 100;
-    let discountAmount = discount;
-    if (discountType === 'percentage') {
-      discountAmount = (subtotal * discount) / 100;
+  // Add new inventory item
+  const handleAddNewItem = async () => {
+    try {
+      const newItem = {
+        itemName: newItemName,
+        category: newItemCategory,
+        stockQty: newItemStock,
+        createdAt: new Date(),
+      };
+      
+      const docRef = await addDoc(collection(db, 'inventory'), newItem);
+      
+      setInventory(prev => [...prev, { id: docRef.id, ...newItem }]);
+      
+      // Reset form
+      setNewItemName('');
+      setNewItemCategory('');
+      setNewItemStock(0);
+      setShowNewItemModal(false);
+      
+      toast({
+        title: "Item Added",
+        description: `${newItemName} has been added to inventory.`,
+      });
+    } catch (error) {
+      console.error('Error adding new item:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add new item to inventory.",
+        variant: "destructive",
+      });
     }
-    const totalAmount = subtotal + gstAmount - discountAmount;
-    setSubtotal(subtotal);
-    setGstAmount(gstAmount);
-    setTotalAmount(totalAmount);
-    setBalance(totalAmount - paidAmount);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Get stock warning for item
+  const getStockWarning = (description: string, quantity: number) => {
+    const inventoryItem = inventory.find(item => 
+      item.itemName.toLowerCase() === description.toLowerCase()
+    );
+    
+    if (inventoryItem && inventoryItem.stockQty < quantity) {
+      return `Warning: Only ${inventoryItem.stockQty} left in stock.`;
+    }
+    return null;
+  };
+
+  // Form submission
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    calculateTotals();
+    
+    if (Object.keys(validationErrors).length > 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please fix the errors before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Final calculations with proper GST handling
+    const finalGstPercent = Number(gstPercent) || 0;
+    const { subtotal: finalSubtotal, gstAmount: finalGstAmount, totalAmount: finalTotalAmount } = calculateBillTotals(
+      items.filter(item => item.description.trim()),
+      breakdown,
+      finalGstPercent,
+      discount,
+      discountType
+    );
 
     const billData: Bill = {
       id: billId || bill?.id || uuidv4(),
@@ -225,17 +332,17 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
       customerEmail,
       customerAddress,
       orderId,
-      items,
+      items: items.filter(item => item.description.trim()),
       breakdown,
-      subtotal,
-      gstPercent,
-      gstAmount,
+      subtotal: finalSubtotal,
+      gstPercent: finalGstPercent,
+      gstAmount: finalGstPercent === 0 ? 0 : finalGstAmount,
       discount,
       discountType,
-      totalAmount,
+      totalAmount: finalTotalAmount,
       paidAmount,
-      balance,
-      status,
+      balance: finalTotalAmount - paidAmount,
+      status: paidAmount >= finalTotalAmount ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid',
       date,
       dueDate,
       bankDetails,
@@ -248,43 +355,77 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
     };
 
     onSave(billData);
+    
+    toast({
+      title: "Success",
+      description: `Bill ${billIdState} ${bill ? 'updated' : 'created'} successfully.`,
+    });
+    
     if (onSuccess) {
       onSuccess();
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg">
+    <div className="w-full max-w-6xl mx-auto p-3 sm:p-6 bg-white rounded-lg shadow-lg">
       {/* Header Section */}
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">
+      <div className="mb-6 sm:mb-8">
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
           {billId || bill ? 'Edit Bill' : 'Create New Bill'}
         </h2>
-        <p className="text-gray-600">
+        <p className="text-sm sm:text-base text-gray-600">
           Manage your billing details and customer information here.
         </p>
+        
+        {/* Customer Lock Info */}
+        {isCustomerLocked && bill && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-700 mb-2">
+              You are editing Bill #{bill.billId}. To change customer, click 'Change Customer'.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowChangeCustomer(!showChangeCustomer)}
+              className="text-blue-600"
+            >
+              <Edit3 className="h-4 w-4 mr-1" />
+              Change Customer
+            </Button>
+          </div>
+        )}
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
         {/* Customer and Order Selection */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="customer">Select Customer</Label>
-            <Select onValueChange={setCustomerId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a customer" />
-              </SelectTrigger>
-              <SelectContent>
-                {customers.map(customer => (
-                  <SelectItem key={customer.id} value={customer.id}>
-                    {customer.name} - {customer.phone}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          <div className="space-y-4">
+            <Label htmlFor="customer" className="text-sm sm:text-base">Select Customer *</Label>
+            {isCustomerLocked && !showChangeCustomer ? (
+              <div className="space-y-2">
+                <Input value={customerName} readOnly className="bg-gray-100" />
+                <Input value={customerPhone} readOnly className="bg-gray-100 text-sm" />
+                {customerEmail && <Input value={customerEmail} readOnly className="bg-gray-100 text-sm" />}
+              </div>
+            ) : (
+              <Select value={customerId} onValueChange={setCustomerId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a customer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.map(customer => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {customer.name} - {customer.phone}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
-          <div>
-            <Label htmlFor="orderId">Order ID (Optional)</Label>
+          
+          <div className="space-y-2">
+            <Label htmlFor="orderId" className="text-sm sm:text-base">Order ID (Optional)</Label>
             <Input
               id="orderId"
               type="text"
@@ -297,338 +438,380 @@ const BillForm = ({ billId, bill, onSave, onCancel, onSuccess }: BillFormProps) 
 
         {/* Items Section */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h3 className="text-lg font-semibold text-gray-900">Bill Items</h3>
             <Button
               type="button"
               onClick={addItem}
               variant="outline"
               size="sm"
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 w-full sm:w-auto"
             >
               <Plus className="h-4 w-4" />
               Add Item
             </Button>
           </div>
 
-          {/* Items table */}
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Description
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Quantity
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Rate
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="relative px-6 py-3">
-                    <span className="sr-only">Remove</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <Input
-                        type="text"
-                        placeholder="Item description"
-                        value={item.description}
-                        onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+          {/* Items List - Responsive */}
+          <div className="space-y-4">
+            {items.map((item, index) => {
+              const stockWarning = getStockWarning(item.description, item.quantity);
+              return (
+                <div key={item.id} className="border rounded-lg p-4 space-y-4 bg-gray-50">
+                  {/* Mobile Layout */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="lg:col-span-2">
+                      <Label className="text-sm">Description</Label>
+                      <Select 
+                        value={item.description} 
+                        onValueChange={(value) => updateItem(item.id, 'description', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select item" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {inventory.map(invItem => (
+                            <SelectItem key={invItem.id} value={invItem.itemName}>
+                              {invItem.itemName} | Stock: {invItem.stockQty}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="__add_new__">
+                            <span className="text-blue-600">+ Add New Item</span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {stockWarning && (
+                        <Badge variant="destructive" className="mt-1 text-xs">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          {stockWarning}
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <Label className="text-sm">Qty</Label>
                       <Input
                         type="number"
-                        placeholder="Quantity"
                         value={item.quantity}
                         onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
+                        min="1"
                       />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    </div>
+                    
+                    <div>
+                      <Label className="text-sm">Rate</Label>
                       <Input
                         type="number"
-                        placeholder="Rate"
                         value={item.rate}
                         onChange={(e) => updateItem(item.id, 'rate', e.target.value)}
+                        min="0"
+                        step="0.01"
                       />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {item.amount}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <Button
-                        type="button"
-                        onClick={() => removeItem(item.id)}
-                        variant="ghost"
-                        size="icon"
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                    
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <Label className="text-sm">Amount</Label>
+                        <Input
+                          type="number"
+                          value={item.amount}
+                          readOnly
+                          className="bg-white font-medium text-purple-600"
+                        />
+                      </div>
+                      {items.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeItem(item.id)}
+                          className="text-red-600 hover:bg-red-50 p-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
         {/* Breakdown Section */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">Breakdown</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="fabric">Fabric</Label>
+          <h3 className="text-lg font-semibold text-gray-900">Charges Breakdown</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm">Fabric</Label>
               <Input
                 type="number"
-                id="fabric"
-                placeholder="Fabric charges"
                 value={breakdown.fabric}
-                onChange={(e) => addBredownCharge('fabric', Number(e.target.value))}
+                onChange={(e) => updateBreakdown('fabric', Number(e.target.value))}
+                min="0"
+                step="0.01"
               />
             </div>
-            <div>
-              <Label htmlFor="stitching">Stitching</Label>
+            <div className="space-y-2">
+              <Label className="text-sm">Stitching</Label>
               <Input
                 type="number"
-                id="stitching"
-                placeholder="Stitching charges"
                 value={breakdown.stitching}
-                onChange={(e) => addBredownCharge('stitching', Number(e.target.value))}
+                onChange={(e) => updateBreakdown('stitching', Number(e.target.value))}
+                min="0"
+                step="0.01"
               />
             </div>
-            <div>
-              <Label htmlFor="accessories">Accessories</Label>
+            <div className="space-y-2">
+              <Label className="text-sm">Accessories</Label>
               <Input
                 type="number"
-                id="accessories"
-                placeholder="Accessories charges"
                 value={breakdown.accessories}
-                onChange={(e) => addBredownCharge('accessories', Number(e.target.value))}
+                onChange={(e) => updateBreakdown('accessories', Number(e.target.value))}
+                min="0"
+                step="0.01"
               />
             </div>
-            <div>
-              <Label htmlFor="customization">Customization</Label>
+            <div className="space-y-2">
+              <Label className="text-sm">Customization</Label>
               <Input
                 type="number"
-                id="customization"
-                placeholder="Customization charges"
                 value={breakdown.customization}
-                onChange={(e) => addBredownCharge('customization', Number(e.target.value))}
+                onChange={(e) => updateBreakdown('customization', Number(e.target.value))}
+                min="0"
+                step="0.01"
               />
             </div>
-            <div>
-              <Label htmlFor="other">Other Charges</Label>
+            <div className="space-y-2">
+              <Label className="text-sm">Other Charges</Label>
               <Input
                 type="number"
-                id="other"
-                placeholder="Other charges"
                 value={breakdown.otherCharges}
-                onChange={(e) => addBredownCharge('otherCharges', Number(e.target.value))}
+                onChange={(e) => updateBreakdown('otherCharges', Number(e.target.value))}
+                min="0"
+                step="0.01"
               />
             </div>
           </div>
         </div>
 
-        {/* Calculations */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">Calculations</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="gst">GST (%)</Label>
-              <Input
-                type="number"
-                id="gst"
-                placeholder="GST percentage"
-                value={gstPercent}
-                onChange={(e) => setGstPercent(Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="discount">Discount</Label>
-              <div className="flex items-center space-x-2">
+        {/* Calculations and Payment Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Calculations */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">Calculations</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm">GST (%)</Label>
                 <Input
                   type="number"
-                  id="discount"
-                  placeholder="Discount amount"
-                  value={discount}
-                  onChange={(e) => setDiscount(Number(e.target.value))}
+                  value={gstPercent}
+                  onChange={(e) => setGstPercent(Number(e.target.value))}
+                  min="0"
+                  max="100"
+                  step="0.01"
                 />
-                <Select value={discountType} onValueChange={(value) => setDiscountType(value as 'amount' | 'percentage')}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Type" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm">Discount Type</Label>
+                <Select value={discountType} onValueChange={(value: 'amount' | 'percentage') => setDiscountType(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="amount">Amount</SelectItem>
-                    <SelectItem value="percentage">Percentage</SelectItem>
+                    <SelectItem value="amount">Amount (₹)</SelectItem>
+                    <SelectItem value="percentage">Percentage (%)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label className="text-sm">Discount {discountType === 'percentage' ? '(%)' : '(₹)'}</Label>
+                <Input
+                  type="number"
+                  value={discount}
+                  onChange={(e) => setDiscount(Number(e.target.value))}
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm">Paid Amount</Label>
+                <Input
+                  type="number"
+                  value={paidAmount}
+                  onChange={(e) => setPaidAmount(Number(e.target.value))}
+                  min="0"
+                  step="0.01"
+                  className={validationErrors.paidAmount ? 'border-red-500' : ''}
+                />
+                {validationErrors.paidAmount && (
+                  <p className="text-red-500 text-xs">{validationErrors.paidAmount}</p>
+                )}
+              </div>
             </div>
-            <div>
-              <Label htmlFor="subtotal">Subtotal</Label>
-              <Input
-                type="text"
-                id="subtotal"
-                value={subtotal}
-                readOnly
-              />
+          </div>
+
+          {/* Summary and QR Payment */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">Bill Summary</h3>
+            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Subtotal:</span>
+                <span>₹{subtotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>GST ({gstPercent}%):</span>
+                <span>₹{gstAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Discount:</span>
+                <span>-₹{discount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-lg font-bold border-t pt-2">
+                <span>Total Amount:</span>
+                <span className="text-purple-600">₹{totalAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Paid Amount:</span>
+                <span className="text-green-600">₹{paidAmount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-lg font-bold">
+                <span>Balance:</span>
+                <span className={balance > 0 ? 'text-red-600' : 'text-green-600'}>
+                  ₹{balance.toFixed(2)}
+                </span>
+              </div>
             </div>
-            <div>
-              <Label htmlFor="total">Total</Label>
-              <Input
-                type="text"
-                id="total"
-                value={totalAmount}
-                readOnly
-              />
+
+            {/* QR Payment Section */}
+            <div className="space-y-3">
+              <Label className="text-sm">QR Amount (for payment)</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  value={qrAmount}
+                  onChange={(e) => setQrAmount(Number(e.target.value))}
+                  min="0"
+                  step="0.01"
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={generateUpiLinkAndQrCode}
+                  size="sm"
+                >
+                  Regenerate QR
+                </Button>
+              </div>
+              <p className="text-xs text-gray-600">
+                Amount encoded in QR: ₹{qrAmount.toFixed(2)}. Edit if you need a partial-payment QR.
+              </p>
+              
+              {qrCodeUrl && (
+                <div className="text-center">
+                  <img src={qrCodeUrl} alt="UPI QR Code" className="w-32 h-32 mx-auto border rounded" />
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Payment Details */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">Payment Details</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="paid">Paid Amount</Label>
-              <Input
-                type="number"
-                id="paid"
-                placeholder="Paid amount"
-                value={paidAmount}
-                onChange={(e) => setPaidAmount(Number(e.target.value))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="balance">Balance</Label>
-              <Input
-                type="text"
-                id="balance"
-                value={balance}
-                readOnly
-              />
-            </div>
-            <div>
-              <Label htmlFor="date">Date</Label>
-              <DatePicker date={date} onDateChange={setDate} />
-            </div>
-            <div>
-              <Label htmlFor="due-date">Due Date</Label>
-              <DatePicker date={dueDate} onDateChange={setDueDate} />
-            </div>
+        {/* Additional Fields */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm">Date</Label>
+            <DatePicker date={date} onDateChange={setDate} />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm">Due Date</Label>
+            <DatePicker date={dueDate} onDateChange={setDueDate} />
           </div>
         </div>
 
-        {/* Bank Details */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">Bank Details</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="accountName">Account Name</Label>
-              <Input
-                type="text"
-                id="accountName"
-                placeholder="Account name"
-                value={bankDetails.accountName}
-                onChange={(e) => setBankDetails({ ...bankDetails, accountName: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="accountNumber">Account Number</Label>
-              <Input
-                type="text"
-                id="accountNumber"
-                placeholder="Account number"
-                value={bankDetails.accountNumber}
-                onChange={(e) => setBankDetails({ ...bankDetails, accountNumber: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ifsc">IFSC</Label>
-              <Input
-                type="text"
-                id="ifsc"
-                placeholder="IFSC code"
-                value={bankDetails.ifsc}
-                onChange={(e) => setBankDetails({ ...bankDetails, ifsc: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="bankName">Bank Name</Label>
-              <Input
-                type="text"
-                id="bankName"
-                placeholder="Bank name"
-                value={bankDetails.bankName}
-                onChange={(e) => setBankDetails({ ...bankDetails, bankName: e.target.value })}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* UPI Section */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">UPI Details</h3>
-          <div>
-            <Label htmlFor="upiId">UPI ID</Label>
-            <Input
-              type="text"
-              id="upiId"
-              placeholder="Enter UPI ID"
-              value={upiId}
-              onChange={(e) => setUpiId(e.target.value)}
-            />
-          </div>
-          {qrCodeUrl && (
-            <div>
-              <img src={qrCodeUrl} alt="UPI QR Code" className="max-w-xs" />
-            </div>
-          )}
-          {upiLink && (
-            <div>
-              <a href={upiLink} target="_blank" rel="noopener noreferrer" className="text-blue-500">
-                Pay via UPI
-              </a>
-            </div>
-          )}
-        </div>
-
-        {/* Notes Section */}
-        <div className="space-y-4">
-          <Label htmlFor="notes">Notes (Optional)</Label>
+        <div className="space-y-2">
+          <Label className="text-sm">UPI ID</Label>
           <Input
-            id="notes"
-            type="text"
-            placeholder="Enter any notes"
-            value={notes || ''}
-            onChange={(e) => setNotes(e.target.value)}
+            value={upiId}
+            onChange={(e) => setUpiId(e.target.value)}
+            placeholder="your-upi@bank"
           />
         </div>
 
-        {/* Form Buttons */}
-        <div className="flex justify-end space-x-4">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onCancel}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-          >
-            Save Bill
-          </Button>
+        <div className="space-y-2">
+          <Label className="text-sm">Notes (Optional)</Label>
+          <Input
+            value={notes || ''}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Any additional notes..."
+          />
+        </div>
+
+        {/* Sticky Action Bar for Mobile */}
+        <div className="sticky bottom-0 bg-white border-t pt-4 mt-6 sm:static sm:border-t-0 sm:pt-0">
+          <div className="flex flex-col sm:flex-row justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              className="order-2 sm:order-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="order-1 sm:order-2 bg-purple-600 hover:bg-purple-700"
+              disabled={Object.keys(validationErrors).length > 0}
+            >
+              Save Bill
+            </Button>
+          </div>
         </div>
       </form>
+
+      {/* Add New Item Modal */}
+      <Dialog open={showNewItemModal} onOpenChange={setShowNewItemModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add New Inventory Item</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Item Name</Label>
+              <Input
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                placeholder="Enter item name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input
+                value={newItemCategory}
+                onChange={(e) => setNewItemCategory(e.target.value)}
+                placeholder="Enter category"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Initial Stock</Label>
+              <Input
+                type="number"
+                value={newItemStock}
+                onChange={(e) => setNewItemStock(Number(e.target.value))}
+                min="0"
+              />
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowNewItemModal(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddNewItem}>
+                Add Item
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
