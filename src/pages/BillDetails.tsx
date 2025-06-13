@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,6 +34,7 @@ const BillDetails = () => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (billId) {
@@ -89,18 +89,45 @@ const BillDetails = () => {
     }
   };
 
-  const handleDownloadPDF = () => {
-    // This would implement PDF generation
-    toast({
-      title: "Info",
-      description: "PDF download feature coming soon",
-    });
+  const handleDownloadPDF = async () => {
+    if (!bill) return;
+    
+    setDownloading(true);
+    try {
+      await downloadPDF(bill);
+      toast({
+        title: "PDF Downloaded",
+        description: "Bill has been downloaded successfully",
+      });
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
   };
 
-  const handlePayWithUPI = () => {
-    if (bill?.upiLink) {
-      window.open(bill.upiLink, '_blank');
-    }
+  const handleWhatsAppShare = (templateType: string) => {
+    if (!bill) return;
+    
+    const templates = getWhatsAppTemplates(
+      bill.customerName,
+      bill.billId,
+      bill.totalAmount,
+      bill.balance,
+      bill.upiLink,
+      bill.dueDate ? new Date(bill.dueDate.toDate()).toLocaleDateString() : undefined
+    );
+    
+    const message = templates[templateType as keyof typeof templates] || templates.billDelivery;
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/${bill.customerPhone}?text=${encodedMessage}`;
+    
+    window.open(whatsappUrl, '_blank');
   };
 
   if (loading) {
