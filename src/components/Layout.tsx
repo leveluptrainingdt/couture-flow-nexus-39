@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
@@ -21,7 +20,8 @@ import {
   X,
   Shield,
   ChevronDown,
-  User
+  User,
+  Receipt
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -44,6 +44,7 @@ const Layout = ({ children }: LayoutProps) => {
   const adminMenuItems = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Orders', href: '/orders', icon: ShoppingBag },
+    { name: 'Billing', href: '/billing', icon: Receipt },
     { name: 'Customers', href: '/customers', icon: Users },
     { name: 'Inventory', href: '/inventory', icon: Package },
     { name: 'Appointments', href: '/appointments', icon: Calendar },
@@ -58,6 +59,7 @@ const Layout = ({ children }: LayoutProps) => {
   const staffMenuItems = [
     { name: 'Dashboard', href: '/staff/dashboard', icon: LayoutDashboard },
     { name: 'Orders', href: '/orders', icon: ShoppingBag },
+    { name: 'Billing', href: '/billing', icon: Receipt },
     { name: 'Customers', href: '/customers', icon: Users },
     { name: 'Inventory', href: '/inventory', icon: Package },
     { name: 'Appointments', href: '/appointments', icon: Calendar },

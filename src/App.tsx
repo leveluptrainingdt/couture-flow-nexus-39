@@ -21,6 +21,8 @@ import Expenses from "@/pages/Expenses";
 import Reports from "@/pages/Reports";
 import Admin from "@/pages/Admin";
 import Settings from "@/pages/Settings";
+import Billing from "@/pages/Billing";
+import BillDetails from "@/pages/BillDetails";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +56,20 @@ const App = () => (
                 <ProtectedRoute>
                   <Layout>
                     <Orders />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/billing" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Billing />
+                  </Layout>
+                </ProtectedRoute>
+              } />
+              <Route path="/billing/:billId" element={
+                <ProtectedRoute>
+                  <Layout>
+                    <BillDetails />
                   </Layout>
                 </ProtectedRoute>
               } />
