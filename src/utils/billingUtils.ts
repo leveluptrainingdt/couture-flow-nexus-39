@@ -1,3 +1,4 @@
+
 export interface BillItem {
   id: string;
   description: string;
@@ -25,7 +26,7 @@ export interface BankDetails {
 export interface Bill {
   id: string;
   billId: string;
-  customerId: string;
+  customerId?: string;
   customerName: string;
   customerPhone: string;
   customerEmail?: string;
@@ -48,6 +49,7 @@ export interface Bill {
   upiId: string;
   upiLink: string;
   qrCodeUrl: string;
+  qrAmount?: number;
   notes?: string;
   createdAt: any;
   updatedAt: any;

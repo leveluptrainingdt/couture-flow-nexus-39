@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
@@ -93,7 +92,7 @@ const BillFormAdvanced: React.FC<BillFormAdvancedProps> = ({
     balance: 0,
     status: 'unpaid',
     date: new Date(),
-    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+    dueDate: new Date(Date.now() + 7 * 24 * 60 * 1000), // 7 days from now
     bankDetails: {
       accountName: 'Swetha\'s Couture',
       accountNumber: '1234567890',
@@ -206,11 +205,11 @@ const BillFormAdvanced: React.FC<BillFormAdvancedProps> = ({
 
   // Generate UPI link and QR code
   const generateUpiAndQr = useCallback(async () => {
-    if (formData.upiId && formData.customerName && formData.qrAmount && formData.billId) {
+    if (formData.upiId && formData.customerName && (formData.qrAmount || 0) > 0 && formData.billId) {
       const newUpiLink = generateUPILink(
         formData.upiId,
         formData.customerName,
-        formData.qrAmount,
+        formData.qrAmount || formData.balance || 0,
         formData.billId
       );
       setUpiLink(newUpiLink);
@@ -227,7 +226,7 @@ const BillFormAdvanced: React.FC<BillFormAdvancedProps> = ({
         });
       }
     }
-  }, [formData.upiId, formData.customerName, formData.qrAmount, formData.billId]);
+  }, [formData.upiId, formData.customerName, formData.qrAmount, formData.billId, formData.balance]);
 
   useEffect(() => {
     generateUpiAndQr();
@@ -325,6 +324,7 @@ const BillFormAdvanced: React.FC<BillFormAdvancedProps> = ({
         ...formData,
         id: billId || uuidv4(),
         billId: formData.billId!,
+        customerId: formData.customerId || selectedCustomer?.id || '',
         customerName: formData.customerName!,
         customerPhone: formData.customerPhone!,
         items: formData.items!,
@@ -333,14 +333,17 @@ const BillFormAdvanced: React.FC<BillFormAdvancedProps> = ({
         gstPercent: formData.gstPercent!,
         gstAmount: formData.gstAmount!,
         discount: formData.discount!,
+        discountType: formData.discountType!,
         totalAmount: formData.totalAmount!,
         paidAmount: formData.paidAmount!,
         balance: formData.balance!,
         status: formData.status!,
         date: formData.date!,
         bankDetails: formData.bankDetails!,
+        upiId: formData.upiId!,
         upiLink,
         qrCodeUrl,
+        qrAmount: formData.qrAmount,
         createdAt: bill?.createdAt || new Date(),
         updatedAt: new Date()
       };
