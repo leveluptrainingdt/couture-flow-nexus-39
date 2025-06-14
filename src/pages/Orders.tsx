@@ -59,6 +59,7 @@ interface CustomOrder {
   balance: number;
   deliveryDate: string;
   notes?: string;
+  designImages?: string[];
   createdAt: any;
   updatedAt?: any;
 }
