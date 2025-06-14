@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -10,6 +9,7 @@ interface UserData {
   email: string;
   role: 'admin' | 'staff';
   name: string;
+  phone?: string;
 }
 
 interface AuthContextType {
@@ -47,7 +47,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               uid: user.uid,
               email: user.email!,
               role: data.role,
-              name: data.name
+              name: data.name,
+              phone: data.phone
             });
           } else {
             // If user doesn't exist in Firestore, create a default entry

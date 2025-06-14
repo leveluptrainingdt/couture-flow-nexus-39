@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Settings as SettingsIcon, User, Building, Bell, Shield, Palette, Database } from 'lucide-react';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -137,7 +137,7 @@ const Settings = () => {
   const saveBusinessSettings = async () => {
     try {
       setSaving(true);
-      await updateDoc(doc(db, 'settings', 'business'), businessSettings);
+      await setDoc(doc(db, 'settings', 'business'), businessSettings);
       toast({
         title: "Success",
         description: "Business settings saved successfully",
@@ -157,7 +157,7 @@ const Settings = () => {
   const saveNotificationSettings = async () => {
     try {
       setSaving(true);
-      await updateDoc(doc(db, 'settings', 'notifications'), notificationSettings);
+      await setDoc(doc(db, 'settings', 'notifications'), notificationSettings);
       toast({
         title: "Success",
         description: "Notification settings saved successfully",
