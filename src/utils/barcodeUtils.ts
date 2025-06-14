@@ -5,59 +5,111 @@ interface BarcodeResponse {
 
 export const generateBarcode = async (text: string): Promise<string> => {
   try {
-    // Generate barcode using Code128 format with Cloudinary
-    const barcodeUrl = `https://res.cloudinary.com/dvmrhs2ek/image/upload/c_scale,w_200/l_text:Arial_20:${encodeURIComponent(text)}/fl_layer_apply,g_south,y_10/v1/barcode_base.png`;
+    if (!text || text.trim() === '') {
+      throw new Error('No text provided for barcode generation');
+    }
+
+    // Clean the text for barcode generation
+    const cleanText = text.replace(/[^A-Za-z0-9\-_]/g, '');
     
-    // Alternative: Use a barcode generation service
-    const response = await fetch(`https://api.qrserver.com/v1/create-qr-code/?size=200x50&data=${encodeURIComponent(text)}&format=png&barcode=true&type=code128`);
+    if (cleanText.length === 0) {
+      throw new Error('Invalid characters for barcode');
+    }
+
+    // Use QR Server API for barcode generation (Code128)
+    const barcodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x100&data=${encodeURIComponent(cleanText)}&format=png&qzone=1`;
+    
+    // Test if the URL is accessible
+    const response = await fetch(barcodeUrl, { method: 'HEAD' });
     
     if (response.ok) {
-      return response.url;
+      return barcodeUrl;
     }
     
-    // Fallback to simple text-based barcode
-    return `data:image/svg+xml;base64,${btoa(`
-      <svg width="200" height="50" xmlns="http://www.w3.org/2000/svg">
-        <rect width="200" height="50" fill="white"/>
-        <g fill="black">
-          ${generateCode128Bars(text)}
-        </g>
-        <text x="100" y="45" text-anchor="middle" font-family="monospace" font-size="8">${text}</text>
-      </svg>
-    `)}`;
+    // Fallback to SVG-based barcode
+    return generateSVGBarcode(cleanText);
   } catch (error) {
     console.error('Error generating barcode:', error);
     // Return a simple text-based fallback
-    return `data:image/svg+xml;base64,${btoa(`
-      <svg width="200" height="50" xmlns="http://www.w3.org/2000/svg">
-        <rect width="200" height="50" fill="white" stroke="black"/>
-        <text x="100" y="30" text-anchor="middle" font-family="monospace" font-size="12">${text}</text>
-      </svg>
-    `)}`;
+    return generateSVGBarcode(text);
   }
 };
 
-const generateCode128Bars = (text: string): string => {
-  // Simplified Code128 pattern generation
-  const bars = [];
-  let x = 10;
+const generateSVGBarcode = (text: string): string => {
+  const cleanText = text.substring(0, 20); // Limit length
   
-  for (let i = 0; i < text.length; i++) {
+  return `data:image/svg+xml;base64,${btoa(`
+    <svg width="300" height="100" xmlns="http://www.w3.org/2000/svg">
+      <rect width="300" height="100" fill="white" stroke="#ddd" stroke-width="1"/>
+      <g fill="black">
+        ${generateCode128Bars(cleanText)}
+      </g>
+      <text x="150" y="85" text-anchor="middle" font-family="monospace" font-size="10" fill="black">${cleanText}</text>
+    </svg>
+  `)}`;
+};
+
+const generateCode128Bars = (text: string): string => {
+  // Simplified Code128 pattern generation for visual representation
+  const bars = [];
+  let x = 20;
+  const barWidth = 2;
+  const barHeight = 60;
+  
+  for (let i = 0; i < text.length && i < 15; i++) {
     const char = text.charCodeAt(i);
-    const pattern = char % 2 === 0 ? [2, 1, 2, 1] : [1, 2, 1, 2];
+    // Create alternating bar pattern based on character code
+    const pattern = char % 2 === 0 ? [3, 1, 2, 1, 3] : [2, 1, 3, 1, 2];
     
     for (let j = 0; j < pattern.length; j++) {
       if (j % 2 === 0) {
-        bars.push(`<rect x="${x}" y="5" width="${pattern[j]}" height="30"/>`);
+        // Draw black bar
+        bars.push(`<rect x="${x}" y="10" width="${pattern[j] * barWidth}" height="${barHeight}"/>`);
       }
-      x += pattern[j];
+      x += pattern[j] * barWidth;
     }
+    x += 2; // Space between character groups
   }
   
   return bars.join('');
 };
 
 export const validateBarcodeText = (text: string): boolean => {
-  // Basic validation for barcode text
-  return text.length > 0 && text.length <= 50 && /^[A-Za-z0-9\-_]+$/.test(text);
+  // Enhanced validation for barcode text
+  if (!text || typeof text !== 'string') {
+    return false;
+  }
+  
+  const trimmedText = text.trim();
+  
+  // Check length constraints
+  if (trimmedText.length === 0 || trimmedText.length > 50) {
+    return false;
+  }
+  
+  // Check for valid characters (alphanumeric, hyphens, underscores)
+  const validPattern = /^[A-Za-z0-9\-_\s]+$/;
+  return validPattern.test(trimmedText);
+};
+
+export const formatBarcodeText = (text: string): string => {
+  // Format text for barcode generation
+  return text
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Za-z0-9\-_]/g, '')
+    .substring(0, 20);
+};
+
+// Generate barcode data for printing
+export const generateBarcodeData = (text: string) => {
+  const formattedText = formatBarcodeText(text);
+  
+  return {
+    text: formattedText,
+    isValid: validateBarcodeText(text),
+    url: generateBarcode(formattedText),
+    type: 'Code128',
+    size: { width: 300, height: 100 }
+  };
 };
