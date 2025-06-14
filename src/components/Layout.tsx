@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLocation, Link, useNavigate } from 'react-router-dom';
@@ -43,6 +44,7 @@ const Layout = ({ children }: LayoutProps) => {
 
   const adminMenuItems = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'Admin Panel', href: '/admin', icon: Shield },
     { name: 'Orders', href: '/orders', icon: ShoppingBag },
     { name: 'Billing', href: '/billing', icon: Receipt },
     { name: 'Customers', href: '/customers', icon: Users },
@@ -52,12 +54,11 @@ const Layout = ({ children }: LayoutProps) => {
     { name: 'Staff', href: '/staff', icon: UserPlus },
     { name: 'Expenses', href: '/expenses', icon: DollarSign },
     { name: 'Reports', href: '/reports', icon: BarChart3 },
-    { name: 'Admin Panel', href: '/admin', icon: Shield },
-    { name: 'Settings', href: '/admin/settings', icon: Settings },
+    { name: 'Settings', href: '/settings', icon: Settings },
   ];
 
   const staffMenuItems = [
-    { name: 'Dashboard', href: '/staff/dashboard', icon: LayoutDashboard },
+    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Orders', href: '/orders', icon: ShoppingBag },
     { name: 'Billing', href: '/billing', icon: Receipt },
     { name: 'Customers', href: '/customers', icon: Users },
@@ -176,7 +177,7 @@ const Layout = ({ children }: LayoutProps) => {
 
               {/* User Dropdown Menu */}
               {userMenuOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg py-2">
+                <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-50">
                   <div className="px-4 py-2 border-b border-gray-100">
                     <p className="text-sm font-medium text-gray-900">{userData?.name}</p>
                     <p className="text-xs text-gray-500">{userData?.email}</p>
@@ -236,7 +237,9 @@ const Layout = ({ children }: LayoutProps) => {
 
         {/* Page Content */}
         <main className="flex-1 p-6 lg:p-8 overflow-auto">
-          {children}
+          <div className="min-h-full">
+            {children}
+          </div>
         </main>
       </div>
     </div>

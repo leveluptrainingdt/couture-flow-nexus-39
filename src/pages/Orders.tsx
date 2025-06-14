@@ -1,27 +1,22 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Plus, Package, Calendar as CalendarIcon, Grid, List, Search, Edit, Trash2, Phone, MessageCircle, CheckCircle, Clock, AlertCircle, XCircle, Eye } from 'lucide-react';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
+import { Plus, Package, Calendar as CalendarIcon, Grid, List, Search, Eye, MessageCircle, CheckCircle, Clock, AlertCircle, XCircle } from 'lucide-react';
+import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
-import { format, addDays } from 'date-fns';
-import { cn } from '@/lib/utils';
 import OrderCalendar from '@/components/OrderCalendar';
 import OrderGridView from '@/components/OrderGridView';
 import OrderDetailsModal from '@/components/OrderDetailsModal';
 import WhatsAppMessageModal from '@/components/WhatsAppMessageModal';
 import { Skeleton } from '@/components/ui/skeleton';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
 interface CustomOrder {
   id: string;
@@ -55,7 +50,6 @@ interface CustomOrder {
   assignedStaff?: string;
 }
 
-// Order interface for components that expect it
 interface Order {
   id: string;
   orderNumber: string;
@@ -75,8 +69,7 @@ const Orders = () => {
   const { userData } = useAuth();
   const [orders, setOrders] = useState<CustomOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState<CustomOrder | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [view, setView] = useState<'list' | 'grid' | 'calendar'>('list');
@@ -84,10 +77,10 @@ const Orders = () => {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
 
-  // Safe data loading with error handling
   useEffect(() => {
     if (!userData) {
       setLoading(false);
+      setError('User not authenticated');
       return;
     }
     fetchOrders();
@@ -96,10 +89,13 @@ const Orders = () => {
   const fetchOrders = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
       const ordersQuery = query(
         collection(db, 'orders'),
         orderBy('createdAt', 'desc')
       );
+      
       const ordersSnapshot = await getDocs(ordersQuery);
       const ordersData = ordersSnapshot.docs.map(doc => ({
         id: doc.id,
@@ -109,47 +105,31 @@ const Orders = () => {
       setOrders(ordersData || []);
     } catch (error) {
       console.error('Error fetching orders:', error);
+      setError('Failed to fetch orders. Please try again.');
+      setOrders([]);
       toast({
         title: "Error",
         description: "Failed to fetch orders",
         variant: "destructive",
       });
-      setOrders([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Loading state
-  if (loading) {
+  // Error boundary
+  if (error && !loading) {
     return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <Skeleton className="h-8 w-48 mb-2" />
-            <Skeleton className="h-4 w-64" />
-          </div>
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardHeader>
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-6 w-16" />
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-32" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Unable to load orders</h3>
+              <p className="text-gray-600 mb-4">{error}</p>
+              <Button onClick={fetchOrders}>
+                Try Again
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -157,7 +137,12 @@ const Orders = () => {
     );
   }
 
-  // Safe data access with fallbacks
+  // Loading state
+  if (loading) {
+    return <LoadingSpinner type="page" />;
+  }
+
+  // Safe data access
   const safeOrders = Array.isArray(orders) ? orders : [];
   
   const filteredOrders = safeOrders.filter(order => {
@@ -174,7 +159,7 @@ const Orders = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // Convert CustomOrder to Order format for components
+  // Convert CustomOrder to Order format
   const convertToOrder = (customOrder: CustomOrder): Order => {
     if (!customOrder) {
       return {
@@ -211,7 +196,7 @@ const Orders = () => {
 
   const convertedOrders = filteredOrders.map(convertToOrder);
 
-  // Stats with safe calculations
+  // Stats calculation
   const stats = {
     total: safeOrders.length,
     received: safeOrders.filter(o => o?.status === 'received').length,
@@ -232,6 +217,40 @@ const Orders = () => {
     setIsWhatsAppModalOpen(true);
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'received':
+        return <Clock className="h-4 w-4 text-blue-600" />;
+      case 'in-progress':
+        return <AlertCircle className="h-4 w-4 text-orange-600" />;
+      case 'ready':
+        return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'delivered':
+        return <Package className="h-4 w-4 text-gray-600" />;
+      case 'cancelled':
+        return <XCircle className="h-4 w-4 text-red-600" />;
+      default:
+        return <Clock className="h-4 w-4 text-gray-400" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'received':
+        return 'text-blue-600 bg-blue-50 border-blue-200';
+      case 'in-progress':
+        return 'text-orange-600 bg-orange-50 border-orange-200';
+      case 'ready':
+        return 'text-green-600 bg-green-50 border-green-200';
+      case 'delivered':
+        return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'cancelled':
+        return 'text-red-600 bg-red-50 border-red-200';
+      default:
+        return 'text-gray-600 bg-gray-50 border-gray-200';
+    }
+  };
+
   // Empty state
   if (!loading && safeOrders.length === 0) {
     return (
@@ -247,7 +266,7 @@ const Orders = () => {
             <Package className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 mb-2">No orders yet</h3>
             <p className="text-gray-600 mb-6">Start by creating your first customer order</p>
-            <Button>
+            <Button className="bg-gradient-to-r from-blue-600 to-purple-600">
               <Plus className="h-4 w-4 mr-2" />
               Create First Order
             </Button>
@@ -272,17 +291,17 @@ const Orders = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
+            <CardTitle className="text-sm font-medium">Total</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Received</CardTitle>
             <Clock className="h-4 w-4 text-blue-600" />
@@ -291,7 +310,7 @@ const Orders = () => {
             <div className="text-2xl font-bold text-blue-600">{stats.received}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">In Progress</CardTitle>
             <AlertCircle className="h-4 w-4 text-orange-600" />
@@ -300,7 +319,7 @@ const Orders = () => {
             <div className="text-2xl font-bold text-orange-600">{stats.inProgress}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Ready</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-600" />
@@ -309,7 +328,7 @@ const Orders = () => {
             <div className="text-2xl font-bold text-green-600">{stats.ready}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Delivered</CardTitle>
             <Package className="h-4 w-4 text-gray-600" />
@@ -332,7 +351,7 @@ const Orders = () => {
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="Filter by status" />
           </SelectTrigger>
           <SelectContent>
@@ -341,13 +360,15 @@ const Orders = () => {
             <SelectItem value="in-progress">In Progress</SelectItem>
             <SelectItem value="ready">Ready</SelectItem>
             <SelectItem value="delivered">Delivered</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
         </Select>
-        <div className="flex rounded-lg border">
+        <div className="flex rounded-lg border bg-white">
           <Button
             variant={view === 'list' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setView('list')}
+            className="rounded-r-none"
           >
             <List className="h-4 w-4" />
           </Button>
@@ -355,6 +376,7 @@ const Orders = () => {
             variant={view === 'grid' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setView('grid')}
+            className="rounded-none border-x"
           >
             <Grid className="h-4 w-4" />
           </Button>
@@ -362,6 +384,7 @@ const Orders = () => {
             variant={view === 'calendar' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setView('calendar')}
+            className="rounded-l-none"
           >
             <CalendarIcon className="h-4 w-4" />
           </Button>
@@ -373,7 +396,6 @@ const Orders = () => {
         <OrderCalendar 
           orders={convertedOrders}
           onDateSelect={(date, dayOrders) => {
-            // Handle date selection if needed
             console.log('Selected date:', date, 'Orders:', dayOrders);
           }}
         />
@@ -394,7 +416,7 @@ const Orders = () => {
       )}
 
       {view === 'list' && (
-        <Card>
+        <Card className="border-0 shadow-md">
           <CardHeader>
             <CardTitle>Orders List</CardTitle>
             <CardDescription>All customer orders</CardDescription>
@@ -403,19 +425,40 @@ const Orders = () => {
             {filteredOrders.length > 0 ? (
               <div className="space-y-4">
                 {filteredOrders.map((order) => (
-                  <div key={order?.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div key={order?.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                     <div className="flex-1">
                       <div className="flex items-center space-x-4">
-                        <div>
-                          <h3 className="font-semibold">{order?.customerName || 'Unknown Customer'}</h3>
-                          <p className="text-sm text-gray-600">{order?.orderId || 'No Order ID'}</p>
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900">{order?.customerName || 'Unknown Customer'}</h3>
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <span>{order?.orderId || 'No Order ID'}</span>
+                            <span>•</span>
+                            <span>{order?.dressType || 'No Type'}</span>
+                            {order?.deliveryDate && (
+                              <>
+                                <span>•</span>
+                                <span>Due: {new Date(order.deliveryDate).toLocaleDateString()}</span>
+                              </>
+                            )}
+                          </div>
                         </div>
-                        <Badge variant={order?.status === 'delivered' ? 'default' : 'secondary'}>
-                          {order?.status || 'Unknown'}
-                        </Badge>
+                        <div className="flex items-center space-x-3">
+                          <div className="text-right">
+                            <div className="font-semibold">₹{(order?.totalAmount || 0).toLocaleString()}</div>
+                            {order?.balance > 0 && (
+                              <div className="text-sm text-red-600">₹{order.balance} due</div>
+                            )}
+                          </div>
+                          <Badge className={`${getStatusColor(order?.status || 'received')} border`}>
+                            <div className="flex items-center space-x-1">
+                              {getStatusIcon(order?.status || 'received')}
+                              <span className="capitalize">{order?.status || 'Unknown'}</span>
+                            </div>
+                          </Badge>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 ml-4">
                       <Button size="sm" variant="outline" onClick={() => handleViewOrder(order)}>
                         <Eye className="h-4 w-4" />
                       </Button>

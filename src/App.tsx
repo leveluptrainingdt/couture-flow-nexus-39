@@ -10,6 +10,10 @@ import Orders from './pages/Orders';
 import Customers from './pages/Customers';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Admin from './pages/Admin';
+import Staff from './pages/Staff';
+import Appointments from './pages/Appointments';
+import Alterations from './pages/Alterations';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import AdminExpenses from './pages/AdminExpenses';
@@ -30,6 +34,16 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <Dashboard />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Admin />
                 </Layout>
               </ProtectedRoute>
             }
@@ -70,6 +84,36 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <Customers />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/staff"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Staff />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/appointments"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Appointments />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/alterations"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Alterations />
                 </Layout>
               </ProtectedRoute>
             }

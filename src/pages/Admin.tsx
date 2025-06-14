@@ -13,7 +13,8 @@ import {
   DollarSign,
   TrendingUp,
   UserPlus,
-  Plus
+  Plus,
+  Receipt
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -61,30 +62,47 @@ const Admin = () => {
       count: stats?.totalOrders || 0
     },
     {
+      title: 'Billing & Finance',
+      description: 'Manage invoices and financial records',
+      icon: Receipt,
+      route: '/billing',
+      color: 'text-green-600',
+      bgColor: 'bg-green-50'
+    },
+    {
       title: 'Inventory Control',
       description: 'Track materials, fabrics, and supplies',
       icon: Package,
       route: '/inventory',
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-50',
       count: stats?.lowStockItems || 0,
       countLabel: 'Low Stock'
     },
     {
+      title: 'Customer Management',
+      description: 'Manage customer database and history',
+      icon: Users,
+      route: '/customers',
+      color: 'text-indigo-600',
+      bgColor: 'bg-indigo-50',
+      count: stats?.totalCustomers || 0
+    },
+    {
       title: 'Staff Management',
       description: 'Manage staff and assignments',
-      icon: Users,
+      icon: UserPlus,
       route: '/staff',
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50'
+      color: 'text-orange-600',
+      bgColor: 'bg-orange-50'
     },
     {
       title: 'Appointments',
       description: 'Schedule and manage appointments',
       icon: Calendar,
       route: '/appointments',
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50',
+      color: 'text-pink-600',
+      bgColor: 'bg-pink-50',
       count: stats?.todaysAppointments || 0,
       countLabel: 'Today'
     },
@@ -95,6 +113,14 @@ const Admin = () => {
       route: '/alterations',
       color: 'text-red-600',
       bgColor: 'bg-red-50'
+    },
+    {
+      title: 'Reports & Analytics',
+      description: 'View business insights and reports',
+      icon: TrendingUp,
+      route: '/reports',
+      color: 'text-teal-600',
+      bgColor: 'bg-teal-50'
     },
     {
       title: 'Settings',
@@ -168,12 +194,12 @@ const Admin = () => {
         {adminCards.map((card, index) => (
           <Card 
             key={index} 
-            className="hover:shadow-lg transition-all duration-300 border-0 shadow-md cursor-pointer"
+            className="hover:shadow-lg transition-all duration-300 border-0 shadow-md cursor-pointer group"
             onClick={() => navigate(card.route)}
           >
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <div className={`p-3 rounded-lg ${card.bgColor}`}>
+                <div className={`p-3 rounded-lg ${card.bgColor} group-hover:scale-110 transition-transform duration-200`}>
                   <card.icon className={`h-6 w-6 ${card.color}`} />
                 </div>
                 {card.count !== undefined && (
@@ -187,7 +213,9 @@ const Admin = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <CardTitle className="text-lg mb-2">{card.title}</CardTitle>
+              <CardTitle className="text-lg mb-2 group-hover:text-purple-600 transition-colors">
+                {card.title}
+              </CardTitle>
               <CardDescription className="text-gray-600">
                 {card.description}
               </CardDescription>
@@ -216,6 +244,13 @@ const Admin = () => {
             </Button>
             <Button 
               className="p-4 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg hover:shadow-lg transition-all duration-300 h-auto flex-col"
+              onClick={() => navigate('/billing/new')}
+            >
+              <Receipt className="h-6 w-6 mb-2" />
+              <div className="text-sm font-medium">Create Bill</div>
+            </Button>
+            <Button 
+              className="p-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:shadow-lg transition-all duration-300 h-auto flex-col"
               onClick={() => navigate('/inventory')}
             >
               <Package className="h-6 w-6 mb-2" />
@@ -227,13 +262,6 @@ const Admin = () => {
             >
               <Calendar className="h-6 w-6 mb-2" />
               <div className="text-sm font-medium">Book Appointment</div>
-            </Button>
-            <Button 
-              className="p-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:shadow-lg transition-all duration-300 h-auto flex-col"
-              onClick={() => navigate('/staff')}
-            >
-              <UserPlus className="h-6 w-6 mb-2" />
-              <div className="text-sm font-medium">Manage Staff</div>
             </Button>
           </div>
         </CardContent>
