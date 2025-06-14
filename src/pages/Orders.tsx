@@ -13,8 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Plus, Package, TrendingUp, Clock, Search, Edit, Trash2, Eye, Camera, MessageSquare, CalendarIcon, Filter, Grid3X3, List, Phone } from 'lucide-react';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { Plus, Package, TrendingUp, Clock, Search, Edit, Trash2, Eye, Camera, MessageSquare, CalendarIcon, Filter, Grid3X3, List, Phone, Barcode, Users, FileText } from 'lucide-react';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import CustomerAutoSuggest from '@/components/CustomerAutoSuggest';
@@ -26,27 +26,40 @@ import OrderDetailsModal from '@/components/OrderDetailsModal';
 import StaffAssignment from '@/components/StaffAssignment';
 import RequiredMaterials from '@/components/RequiredMaterials';
 import { deductInventoryForOrder } from '@/utils/inventoryOrderSync';
+import { generateBarcode } from '@/utils/barcodeUtils';
 import { format } from 'date-fns';
+
+interface OrderItem {
+  id: string;
+  invId?: string;
+  type: string;
+  description: string;
+  qty: number;
+  rate: number;
+  amount: number;
+  barcodeUrl?: string;
+}
 
 interface Order {
   id: string;
-  orderNumber: string;
+  orderId: string;
+  customerId?: string;
   customerName: string;
   customerPhone: string;
   customerEmail?: string;
-  itemType: string;
-  quantity: number;
-  totalAmount: number;
-  advanceAmount: number;
-  remainingAmount: number;
-  status: 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled';
-  orderDate: string;
-  deliveryDate: string;
+  customerAddress?: string;
+  items: OrderItem[];
   measurements?: any;
-  designImages?: string[];
-  notes?: string;
-  assignedStaff?: string[];
+  dressType: string;
   requiredMaterials?: any[];
+  assignedStaff?: any[];
+  status: 'Received' | 'In Progress' | 'Ready' | 'Delivered' | 'Cancelled';
+  progress: { done: number; total: number };
+  totalAmount: number;
+  advancePaid: number;
+  balance: number;
+  deliveryDate: string;
+  notes?: string;
   createdAt: any;
   updatedAt?: any;
 }
@@ -54,14 +67,15 @@ interface Order {
 const Orders = () => {
   const { userData } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [inventory, setInventory] = useState<any[]>([]);
+  const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState<Date | undefined>();
-  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
-  const [uploadingImages, setUploadingImages] = useState(false);
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
   const [selectedOrderForWhatsApp, setSelectedOrderForWhatsApp] = useState<Order | null>(null);
   const [currentView, setCurrentView] = useState<'list' | 'calendar' | 'grid'>('list');
@@ -70,43 +84,45 @@ const Orders = () => {
   const [orderDetailsModalOpen, setOrderDetailsModalOpen] = useState(false);
   const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
   const [gridSelectedStatus, setGridSelectedStatus] = useState<string>('');
-  const [orderCounter, setOrderCounter] = useState(100);
+  const [orderCounter, setOrderCounter] = useState(1000);
+  const [generatingBarcode, setGeneratingBarcode] = useState<string>('');
 
   const [formData, setFormData] = useState({
-    orderNumber: '',
+    orderId: '',
+    customerId: '',
     customerName: '',
     customerPhone: '',
     customerEmail: '',
-    itemType: '',
-    quantity: 1,
-    totalAmount: 0,
-    advanceAmount: 0,
-    status: 'received' as 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled',
-    orderDate: '',
-    deliveryDate: '',
-    notes: '',
+    customerAddress: '',
+    items: [] as OrderItem[],
     measurements: {},
-    designImages: [] as string[],
-    assignedStaff: [] as string[],
-    requiredMaterials: [] as any[]
+    dressType: '',
+    requiredMaterials: [] as any[],
+    assignedStaff: [] as any[],
+    status: 'Received' as Order['status'],
+    progress: { done: 0, total: 1 },
+    totalAmount: 0,
+    advancePaid: 0,
+    balance: 0,
+    deliveryDate: '',
+    notes: ''
   });
 
-  const itemTypes = [
+  const dressTypes = [
     'Blouse', 'Lehenga', 'Saree', 'Kurti', 'Dress', 'Gown', 'Suit', 'Add New Type'
   ];
 
   const statusOptions = [
     { value: 'all', label: 'All Orders' },
-    { value: 'received', label: 'New Orders' },
-    { value: 'in-progress', label: 'In Progress' },
-    { value: 'ready', label: 'Ready' },
-    { value: 'delivered', label: 'Delivered' },
-    { value: 'cancelled', label: 'Cancelled' },
-    { value: 'recent', label: 'Recently Modified' }
+    { value: 'Received', label: 'New Orders' },
+    { value: 'In Progress', label: 'In Progress' },
+    { value: 'Ready', label: 'Ready' },
+    { value: 'Delivered', label: 'Delivered' },
+    { value: 'Cancelled', label: 'Cancelled' }
   ];
 
   useEffect(() => {
-    fetchOrders();
+    fetchAllData();
     loadOrderCounter();
   }, []);
 
@@ -122,133 +138,163 @@ const Orders = () => {
     setOrderCounter(counter);
   };
 
-  const fetchOrders = async () => {
+  const fetchAllData = async () => {
     try {
-      const ordersQuery = query(
-        collection(db, 'orders'),
-        orderBy('createdAt', 'desc')
-      );
-      const ordersSnapshot = await getDocs(ordersQuery);
-      const ordersData = ordersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Order[];
-      
-      setOrders(ordersData);
-    } catch (error) {
-      console.error('Error fetching orders:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch orders",
-        variant: "destructive",
+      // Set up real-time listeners
+      const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+      const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
+        const ordersData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Order[];
+        setOrders(ordersData);
+        setLoading(false);
       });
-    } finally {
+
+      const customersQuery = query(collection(db, 'customers'), orderBy('name'));
+      const unsubscribeCustomers = onSnapshot(customersQuery, (snapshot) => {
+        const customersData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setCustomers(customersData);
+      });
+
+      const inventoryQuery = query(collection(db, 'inventory'), orderBy('name'));
+      const unsubscribeInventory = onSnapshot(inventoryQuery, (snapshot) => {
+        const inventoryData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setInventory(inventoryData);
+      });
+
+      const staffQuery = query(collection(db, 'staff'), orderBy('name'));
+      const unsubscribeStaff = onSnapshot(staffQuery, (snapshot) => {
+        const staffData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setStaff(staffData);
+      });
+
+      // Return cleanup function
+      return () => {
+        unsubscribeOrders();
+        unsubscribeCustomers();
+        unsubscribeInventory();
+        unsubscribeStaff();
+      };
+    } catch (error) {
+      console.error('Error setting up real-time listeners:', error);
       setLoading(false);
     }
   };
 
-  const generateOrderNumber = () => {
+  const generateOrderId = () => {
     const newCounter = orderCounter + 1;
     saveOrderCounter(newCounter);
-    return `SC${newCounter}`;
+    return `O${newCounter}`;
   };
 
-  const createCustomerRecord = async (orderData: any) => {
-    try {
-      // Check if customer already exists with same phone
-      const customersSnapshot = await getDocs(collection(db, 'customers'));
-      const existingCustomer = customersSnapshot.docs.find(doc => 
-        doc.data().phone === orderData.customerPhone
-      );
-
-      if (!existingCustomer) {
-        await addDoc(collection(db, 'customers'), {
-          name: orderData.customerName,
-          phone: orderData.customerPhone,
-          email: orderData.customerEmail || '',
-          measurements: orderData.measurements || {},
-          totalOrders: 1,
-          totalSpent: orderData.totalAmount,
-          lastOrderDate: orderData.orderDate,
-          customerType: 'regular',
-          createdAt: serverTimestamp()
-        });
-        console.log('New customer record created');
-      } else {
-        // Update existing customer
-        const customerData = existingCustomer.data();
-        await updateDoc(doc(db, 'customers', existingCustomer.id), {
-          totalOrders: (customerData.totalOrders || 0) + 1,
-          totalSpent: (customerData.totalSpent || 0) + orderData.totalAmount,
-          lastOrderDate: orderData.orderDate,
-          measurements: { ...customerData.measurements, ...orderData.measurements },
-          updatedAt: serverTimestamp()
-        });
-        console.log('Existing customer record updated');
-      }
-    } catch (error) {
-      console.error('Error creating/updating customer record:', error);
-    }
+  const addNewItem = () => {
+    const newItem: OrderItem = {
+      id: Date.now().toString(),
+      type: '',
+      description: '',
+      qty: 1,
+      rate: 0,
+      amount: 0
+    };
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, newItem]
+    }));
   };
 
-  const uploadImages = async (files: FileList) => {
-    setUploadingImages(true);
-    const uploadedUrls: string[] = [];
-
-    try {
-      for (const file of Array.from(files)) {
-        const formDataUpload = new FormData();
-        formDataUpload.append('file', file);
-        formDataUpload.append('upload_preset', 'swetha');
-
-        const response = await fetch('https://api.cloudinary.com/v1_1/dvmrhs2ek/image/upload', {
-          method: 'POST',
-          body: formDataUpload
-        });
-
-        const data = await response.json();
-        if (data.secure_url) {
-          uploadedUrls.push(data.secure_url);
-        }
+  const updateItem = (index: number, field: keyof OrderItem, value: any) => {
+    setFormData(prev => {
+      const newItems = [...prev.items];
+      newItems[index] = { ...newItems[index], [field]: value };
+      
+      // Recalculate amount if qty or rate changed
+      if (field === 'qty' || field === 'rate') {
+        newItems[index].amount = newItems[index].qty * newItems[index].rate;
       }
-
-      setFormData(prev => ({
+      
+      // Recalculate total
+      const newTotal = newItems.reduce((sum, item) => sum + item.amount, 0);
+      const newBalance = newTotal - prev.advancePaid;
+      
+      return {
         ...prev,
-        designImages: [...prev.designImages, ...uploadedUrls]
-      }));
+        items: newItems,
+        totalAmount: newTotal,
+        balance: newBalance
+      };
+    });
+  };
 
+  const removeItem = (index: number) => {
+    setFormData(prev => {
+      const newItems = prev.items.filter((_, i) => i !== index);
+      const newTotal = newItems.reduce((sum, item) => sum + item.amount, 0);
+      const newBalance = newTotal - prev.advancePaid;
+      
+      return {
+        ...prev,
+        items: newItems,
+        totalAmount: newTotal,
+        balance: newBalance
+      };
+    });
+  };
+
+  const generateItemBarcode = async (itemIndex: number) => {
+    try {
+      setGeneratingBarcode(itemIndex.toString());
+      const item = formData.items[itemIndex];
+      const barcodeText = `${formData.orderId}-${item.type}-${itemIndex + 1}`;
+      const barcodeUrl = await generateBarcode(barcodeText);
+      
+      updateItem(itemIndex, 'barcodeUrl', barcodeUrl);
+      
       toast({
         title: "Success",
-        description: `${uploadedUrls.length} image(s) uploaded successfully`,
+        description: "Barcode generated successfully",
       });
     } catch (error) {
-      console.error('Error uploading images:', error);
+      console.error('Error generating barcode:', error);
       toast({
         title: "Error",
-        description: "Failed to upload images",
+        description: "Failed to generate barcode",
         variant: "destructive",
       });
     } finally {
-      setUploadingImages(false);
+      setGeneratingBarcode('');
     }
   };
 
-  const removeImage = (index: number) => {
+  const handleCustomerSelect = (customer: any) => {
+    setSelectedCustomer(customer);
     setFormData(prev => ({
       ...prev,
-      designImages: prev.designImages.filter((_, i) => i !== index)
+      customerId: customer.id,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      customerEmail: customer.email || '',
+      customerAddress: customer.address || '',
+      measurements: customer.measurements || {}
     }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const remainingAmount = formData.totalAmount - formData.advanceAmount;
-      
       const orderData = {
         ...formData,
-        remainingAmount,
-        orderNumber: editingOrder ? editingOrder.orderNumber : generateOrderNumber(),
+        orderId: editingOrder ? editingOrder.orderId : generateOrderId(),
+        balance: formData.totalAmount - formData.advancePaid,
         ...(editingOrder ? { updatedAt: serverTimestamp() } : { createdAt: serverTimestamp() })
       };
 
@@ -261,14 +307,26 @@ const Orders = () => {
       } else {
         await addDoc(collection(db, 'orders'), orderData);
         
-        // Create customer record if new order
-        await createCustomerRecord(orderData);
+        // Create customer record if new
+        if (!selectedCustomer && formData.customerName) {
+          await addDoc(collection(db, 'customers'), {
+            name: formData.customerName,
+            phone: formData.customerPhone,
+            email: formData.customerEmail,
+            address: formData.customerAddress,
+            measurements: formData.measurements,
+            totalOrders: 1,
+            totalSpent: formData.totalAmount,
+            lastOrderDate: new Date(),
+            createdAt: serverTimestamp()
+          });
+        }
         
-        // Deduct inventory for required materials
+        // Deduct required materials from inventory
         if (formData.requiredMaterials.length > 0) {
           try {
             await deductInventoryForOrder(formData.requiredMaterials.map(m => ({
-              type: m.name,
+              type: m.id,
               quantity: m.quantity
             })));
           } catch (inventoryError) {
@@ -278,7 +336,7 @@ const Orders = () => {
 
         toast({
           title: "Success",
-          description: `Order #${orderData.orderNumber.slice(-3)} created successfully`,
+          description: `Order #${orderData.orderId.slice(-3)} created successfully`,
         });
       }
 
@@ -286,7 +344,6 @@ const Orders = () => {
       setEditingOrder(null);
       resetForm();
       setSelectedCustomer(null);
-      fetchOrders();
     } catch (error) {
       console.error('Error saving order:', error);
       toast({
@@ -299,55 +356,48 @@ const Orders = () => {
 
   const resetForm = () => {
     setFormData({
-      orderNumber: '',
+      orderId: '',
+      customerId: '',
       customerName: '',
       customerPhone: '',
       customerEmail: '',
-      itemType: '',
-      quantity: 1,
-      totalAmount: 0,
-      advanceAmount: 0,
-      status: 'received',
-      orderDate: '',
-      deliveryDate: '',
-      notes: '',
+      customerAddress: '',
+      items: [],
       measurements: {},
-      designImages: [],
+      dressType: '',
+      requiredMaterials: [],
       assignedStaff: [],
-      requiredMaterials: []
+      status: 'Received',
+      progress: { done: 0, total: 1 },
+      totalAmount: 0,
+      advancePaid: 0,
+      balance: 0,
+      deliveryDate: '',
+      notes: ''
     });
-  };
-
-  const handleCustomerSelect = (customer: any) => {
-    setSelectedCustomer(customer);
-    setFormData(prev => ({
-      ...prev,
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      customerEmail: customer.email || '',
-      measurements: customer.measurements || {}
-    }));
   };
 
   const handleEdit = (order: Order) => {
     setEditingOrder(order);
     setFormData({
-      orderNumber: order.orderNumber,
+      orderId: order.orderId,
+      customerId: order.customerId || '',
       customerName: order.customerName,
       customerPhone: order.customerPhone,
       customerEmail: order.customerEmail || '',
-      itemType: order.itemType,
-      quantity: order.quantity,
-      totalAmount: order.totalAmount || 0,
-      advanceAmount: order.advanceAmount || 0,
-      status: order.status,
-      orderDate: order.orderDate,
-      deliveryDate: order.deliveryDate,
-      notes: order.notes || '',
+      customerAddress: order.customerAddress || '',
+      items: order.items || [],
       measurements: order.measurements || {},
-      designImages: order.designImages || [],
+      dressType: order.dressType || '',
+      requiredMaterials: order.requiredMaterials || [],
       assignedStaff: order.assignedStaff || [],
-      requiredMaterials: order.requiredMaterials || []
+      status: order.status,
+      progress: order.progress || { done: 0, total: 1 },
+      totalAmount: order.totalAmount || 0,
+      advancePaid: order.advancePaid || 0,
+      balance: order.balance || 0,
+      deliveryDate: order.deliveryDate,
+      notes: order.notes || ''
     });
     setIsDialogOpen(true);
   };
@@ -360,7 +410,6 @@ const Orders = () => {
           title: "Success",
           description: "Order deleted successfully",
         });
-        fetchOrders();
       } catch (error) {
         console.error('Error deleting order:', error);
         toast({
@@ -382,7 +431,6 @@ const Orders = () => {
         title: "Success",
         description: "Order status updated successfully",
       });
-      fetchOrders();
     } catch (error) {
       console.error('Error updating status:', error);
       toast({
@@ -395,11 +443,11 @@ const Orders = () => {
 
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
-      case 'received': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'in-progress': return 'bg-orange-100 text-orange-700 border-orange-200';
-      case 'ready': return 'bg-green-100 text-green-700 border-green-200';
-      case 'delivered': return 'bg-purple-100 text-purple-700 border-purple-200';
-      case 'cancelled': return 'bg-red-100 text-red-700 border-red-200';
+      case 'Received': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'In Progress': return 'bg-orange-100 text-orange-700 border-orange-200';
+      case 'Ready': return 'bg-green-100 text-green-700 border-green-200';
+      case 'Delivered': return 'bg-purple-100 text-purple-700 border-purple-200';
+      case 'Cancelled': return 'bg-red-100 text-red-700 border-red-200';
       default: return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
@@ -425,52 +473,27 @@ const Orders = () => {
   const filterOrders = (orders: Order[]) => {
     let filtered = orders;
 
-    // Text search filter
     if (searchTerm) {
       filtered = filtered.filter(order =>
         order.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.orderId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         order.customerPhone?.includes(searchTerm) ||
-        order.itemType?.toLowerCase().includes(searchTerm.toLowerCase())
+        order.dressType?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
-    // Status filter
     if (statusFilter !== 'all') {
-      if (statusFilter === 'recent') {
-        const fiveDaysAgo = new Date();
-        fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-        filtered = filtered.filter(order => {
-          if (order.updatedAt && order.updatedAt.toDate) {
-            return order.updatedAt.toDate() > fiveDaysAgo;
-          }
-          return false;
-        });
-      } else {
-        filtered = filtered.filter(order => order.status === statusFilter);
-      }
+      filtered = filtered.filter(order => order.status === statusFilter);
     }
 
-    // Grid view status filter
     if (gridSelectedStatus && gridSelectedStatus !== 'all') {
       filtered = filtered.filter(order => order.status === gridSelectedStatus);
     }
 
-    // Date filter
     if (dateFilter) {
       const filterDate = format(dateFilter, 'yyyy-MM-dd');
       filtered = filtered.filter(order => 
-        order.orderDate === filterDate || order.deliveryDate === filterDate
-      );
-    }
-
-    // Date range filter
-    if (dateRange.from && dateRange.to) {
-      const fromDate = format(dateRange.from, 'yyyy-MM-dd');
-      const toDate = format(dateRange.to, 'yyyy-MM-dd');
-      filtered = filtered.filter(order => 
-        (order.orderDate >= fromDate && order.orderDate <= toDate) ||
-        (order.deliveryDate >= fromDate && order.deliveryDate <= toDate)
+        order.deliveryDate === filterDate
       );
     }
 
@@ -506,13 +529,12 @@ const Orders = () => {
     );
   }
 
-  // Safe calculations with null checks
   const totalOrders = orders.length;
   const totalRevenue = orders
-    .filter(order => order.status === 'delivered')
+    .filter(order => order.status === 'Delivered')
     .reduce((sum, order) => sum + (order.totalAmount || 0), 0);
-  const pendingOrders = orders.filter(order => order.status === 'received').length;
-  const inProgressOrders = orders.filter(order => order.status === 'in-progress').length;
+  const pendingOrders = orders.filter(order => order.status === 'Received').length;
+  const inProgressOrders = orders.filter(order => order.status === 'In Progress').length;
 
   return (
     <div className="space-y-6">
@@ -536,7 +558,7 @@ const Orders = () => {
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button 
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                 onClick={() => {
                   setEditingOrder(null);
                   resetForm();
@@ -549,238 +571,373 @@ const Orders = () => {
             </DialogTrigger>
             <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>
+                <DialogTitle className="text-2xl font-bold text-purple-800">
                   {editingOrder ? 'Edit Order' : 'Create New Order'}
                 </DialogTitle>
                 <DialogDescription>
-                  Fill in the order details below.
+                  Fill in the order details below to create a comprehensive order record.
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-8">
                 {/* Customer Information */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Customer Information</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <CustomerAutoSuggest
-                      value={formData.customerName}
-                      onChange={(value) => setFormData({...formData, customerName: value})}
-                      onCustomerSelect={handleCustomerSelect}
-                      placeholder="Start typing customer name..."
-                    />
-                    <div>
-                      <Label htmlFor="customerPhone">Phone Number</Label>
-                      <Input
-                        id="customerPhone"
-                        value={formData.customerPhone}
-                        onChange={(e) => setFormData({...formData, customerPhone: e.target.value})}
-                        placeholder="Phone number"
-                        required
+                <Card className="border-purple-200">
+                  <CardHeader className="bg-purple-50">
+                    <CardTitle className="flex items-center text-purple-800">
+                      <Users className="h-5 w-5 mr-2" />
+                      Customer Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <CustomerAutoSuggest
+                        value={formData.customerName}
+                        onChange={(value) => setFormData({...formData, customerName: value})}
+                        onCustomerSelect={handleCustomerSelect}
+                        placeholder="Start typing customer name..."
                       />
+                      <div>
+                        <Label htmlFor="customerPhone">Phone Number</Label>
+                        <Input
+                          id="customerPhone"
+                          value={formData.customerPhone}
+                          onChange={(e) => setFormData({...formData, customerPhone: e.target.value})}
+                          placeholder="Phone number"
+                          required
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="customerEmail">Email (Optional)</Label>
-                    <Input
-                      id="customerEmail"
-                      type="email"
-                      value={formData.customerEmail}
-                      onChange={(e) => setFormData({...formData, customerEmail: e.target.value})}
-                      placeholder="Email address"
-                    />
-                  </div>
-                  {selectedCustomer && (
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-                      <p className="text-sm text-green-700">
-                        ✓ Using existing customer data. You can modify the details above if needed.
-                      </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="customerEmail">Email (Optional)</Label>
+                        <Input
+                          id="customerEmail"
+                          type="email"
+                          value={formData.customerEmail}
+                          onChange={(e) => setFormData({...formData, customerEmail: e.target.value})}
+                          placeholder="Email address"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="customerAddress">Address (Optional)</Label>
+                        <Input
+                          id="customerAddress"
+                          value={formData.customerAddress}
+                          onChange={(e) => setFormData({...formData, customerAddress: e.target.value})}
+                          placeholder="Customer address"
+                        />
+                      </div>
                     </div>
-                  )}
-                </div>
+                    {selectedCustomer && (
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                        <p className="text-sm text-green-700">
+                          ✓ Using existing customer data. You can modify the details above if needed.
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
-                {/* Order Details */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Order Details</h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="itemType">Item Type</Label>
-                      <Select value={formData.itemType} onValueChange={(value) => {
-                        if (value === 'Add New Type') {
-                          const newType = prompt('Enter new item type:');
-                          if (newType && newType.trim()) {
-                            setFormData({...formData, itemType: newType.trim()});
-                          }
-                        } else {
-                          setFormData({...formData, itemType: value});
-                        }
-                      }}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select item type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {itemTypes.map(type => (
-                            <SelectItem key={type} value={type}>{type}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="quantity">Quantity</Label>
-                      <Input
-                        id="quantity"
-                        type="number"
-                        min="1"
-                        value={formData.quantity}
-                        onChange={(e) => setFormData({...formData, quantity: parseInt(e.target.value) || 1})}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="status">Status</Label>
-                      <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value as Order['status']})}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="received">Received</SelectItem>
-                          <SelectItem value="in-progress">In Progress</SelectItem>
-                          <SelectItem value="ready">Ready</SelectItem>
-                          <SelectItem value="delivered">Delivered</SelectItem>
-                          <SelectItem value="cancelled">Cancelled</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="orderDate">Order Date</Label>
-                      <Input
-                        id="orderDate"
-                        type="date"
-                        value={formData.orderDate}
-                        onChange={(e) => setFormData({...formData, orderDate: e.target.value})}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="deliveryDate">Delivery Date</Label>
-                      <Input
-                        id="deliveryDate"
-                        type="date"
-                        value={formData.deliveryDate}
-                        onChange={(e) => setFormData({...formData, deliveryDate: e.target.value})}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="totalAmount">Total Amount (₹)</Label>
-                      <Input
-                        id="totalAmount"
-                        type="number"
-                        min="0"
-                        value={formData.totalAmount}
-                        onChange={(e) => setFormData({...formData, totalAmount: parseFloat(e.target.value) || 0})}
-                        placeholder="Enter total: ₹1500"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="advanceAmount">Advance Amount (₹)</Label>
-                      <Input
-                        id="advanceAmount"
-                        type="number"
-                        min="0"
-                        max={formData.totalAmount}
-                        value={formData.advanceAmount}
-                        onChange={(e) => setFormData({...formData, advanceAmount: parseFloat(e.target.value) || 0})}
-                        placeholder="Advance paid: ₹500"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Staff Assignment */}
-                <StaffAssignment
-                  selectedStaff={formData.assignedStaff}
-                  onChange={(staffIds) => setFormData({...formData, assignedStaff: staffIds})}
-                />
-
-                {/* Required Materials */}
-                <RequiredMaterials
-                  selectedMaterials={formData.requiredMaterials}
-                  onChange={(materials) => setFormData({...formData, requiredMaterials: materials})}
-                />
-
-                {/* Dynamic Measurements */}
-                {formData.itemType && formData.itemType !== 'Add New Type' && (
-                  <DynamicMeasurements
-                    itemType={formData.itemType}
-                    measurements={formData.measurements}
-                    onChange={(measurements) => setFormData({...formData, measurements})}
-                  />
-                )}
-
-                {/* Design Images */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Design Images</h3>
-                  <div>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={(e) => e.target.files && uploadImages(e.target.files)}
-                      style={{ display: 'none' }}
-                      id="design-images"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => document.getElementById('design-images')?.click()}
-                      disabled={uploadingImages}
-                    >
-                      <Camera className="h-4 w-4 mr-2" />
-                      {uploadingImages ? 'Uploading...' : 'Upload Images'}
-                    </Button>
-                  </div>
-                  {formData.designImages.length > 0 && (
-                    <div className="grid grid-cols-4 gap-4">
-                      {formData.designImages.map((url, index) => (
-                        <div key={index} className="relative">
-                          <img src={url} alt={`Design ${index + 1}`} className="w-full h-20 object-cover rounded" />
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="absolute -top-2 -right-2 h-6 w-6 p-0"
-                            onClick={() => removeImage(index)}
-                          >
-                            ×
-                          </Button>
+                {/* Order Items */}
+                <Card className="border-blue-200">
+                  <CardHeader className="bg-blue-50">
+                    <CardTitle className="flex items-center text-blue-800">
+                      <Package className="h-5 w-5 mr-2" />
+                      Order Items
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-6">
+                    <div className="space-y-4">
+                      {formData.items.map((item, index) => (
+                        <div key={item.id} className="grid grid-cols-12 gap-2 items-end p-4 border rounded-lg bg-gray-50">
+                          <div className="col-span-3">
+                            <Label>Type/Description</Label>
+                            <Input
+                              value={item.description}
+                              onChange={(e) => updateItem(index, 'description', e.target.value)}
+                              placeholder="Item description"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Quantity</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={item.qty}
+                              onChange={(e) => updateItem(index, 'qty', parseInt(e.target.value) || 1)}
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Rate (₹)</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={item.rate}
+                              onChange={(e) => updateItem(index, 'rate', parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Amount (₹)</Label>
+                            <Input
+                              type="number"
+                              value={item.amount}
+                              readOnly
+                              className="bg-gray-100"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <Label>Actions</Label>
+                            <div className="flex space-x-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => generateItemBarcode(index)}
+                                disabled={generatingBarcode === index.toString()}
+                                className="p-2"
+                              >
+                                {generatingBarcode === index.toString() ? (
+                                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+                                ) : (
+                                  <Barcode className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => removeItem(index)}
+                                className="p-2"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                          {item.barcodeUrl && (
+                            <div className="col-span-12 mt-2">
+                              <img src={item.barcodeUrl} alt="Barcode" className="h-12 border rounded" />
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
-                  )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={addNewItem}
+                      className="w-full border-dashed"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Item
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Dress Type & Measurements */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card className="border-green-200">
+                    <CardHeader className="bg-green-50">
+                      <CardTitle className="flex items-center text-green-800">
+                        <FileText className="h-5 w-5 mr-2" />
+                        Dress Type
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                      <div>
+                        <Label htmlFor="dressType">Dress Type</Label>
+                        <Select value={formData.dressType} onValueChange={(value) => {
+                          if (value === 'Add New Type') {
+                            const newType = prompt('Enter new dress type:');
+                            if (newType && newType.trim()) {
+                              setFormData({...formData, dressType: newType.trim()});
+                            }
+                          } else {
+                            setFormData({...formData, dressType: value});
+                          }
+                        }}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select dress type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {dressTypes.map(type => (
+                              <SelectItem key={type} value={type}>{type}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-yellow-200">
+                    <CardHeader className="bg-yellow-50">
+                      <CardTitle className="flex items-center text-yellow-800">
+                        <Edit className="h-5 w-5 mr-2" />
+                        Order Details
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4 pt-6">
+                      <div>
+                        <Label htmlFor="status">Status</Label>
+                        <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value as Order['status']})}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Received">Received</SelectItem>
+                            <SelectItem value="In Progress">In Progress</SelectItem>
+                            <SelectItem value="Ready">Ready</SelectItem>
+                            <SelectItem value="Delivered">Delivered</SelectItem>
+                            <SelectItem value="Cancelled">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="deliveryDate">Delivery Date</Label>
+                        <Input
+                          id="deliveryDate"
+                          type="date"
+                          value={formData.deliveryDate}
+                          onChange={(e) => setFormData({...formData, deliveryDate: e.target.value})}
+                          required
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
 
-                <div>
-                  <Label htmlFor="notes">Notes</Label>
-                  <Textarea
-                    id="notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                    placeholder="Any special instructions or notes"
-                    rows={3}
-                  />
-                </div>
+                {/* Dynamic Measurements */}
+                {formData.dressType && formData.dressType !== 'Add New Type' && (
+                  <Card className="border-indigo-200">
+                    <CardHeader className="bg-indigo-50">
+                      <CardTitle className="text-indigo-800">Measurements for {formData.dressType}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                      <DynamicMeasurements
+                        itemType={formData.dressType}
+                        measurements={formData.measurements}
+                        onChange={(measurements) => setFormData({...formData, measurements})}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
 
-                <div className="flex justify-end space-x-3">
+                {/* Staff Assignment */}
+                <Card className="border-orange-200">
+                  <CardHeader className="bg-orange-50">
+                    <CardTitle className="flex items-center text-orange-800">
+                      <Users className="h-5 w-5 mr-2" />
+                      Staff Assignment
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <StaffAssignment
+                      selectedStaff={formData.assignedStaff.map(s => s.uid)}
+                      onChange={(staffIds) => {
+                        const assignedStaff = staffIds.map(id => {
+                          const staffMember = staff.find(s => s.id === id);
+                          return {
+                            uid: id,
+                            name: staffMember?.name || 'Unknown',
+                            role: staffMember?.role || ''
+                          };
+                        });
+                        setFormData({...formData, assignedStaff});
+                      }}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Required Materials */}
+                <Card className="border-red-200">
+                  <CardHeader className="bg-red-50">
+                    <CardTitle className="flex items-center text-red-800">
+                      <Package className="h-5 w-5 mr-2" />
+                      Required Materials
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <RequiredMaterials
+                      selectedMaterials={formData.requiredMaterials}
+                      onChange={(materials) => setFormData({...formData, requiredMaterials: materials})}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Financial Details */}
+                <Card className="border-purple-200">
+                  <CardHeader className="bg-purple-50">
+                    <CardTitle className="flex items-center text-purple-800">
+                      <TrendingUp className="h-5 w-5 mr-2" />
+                      Financial Details
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-6">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor="totalAmount">Total Amount (₹)</Label>
+                        <Input
+                          id="totalAmount"
+                          type="number"
+                          value={formData.totalAmount}
+                          readOnly
+                          className="bg-gray-100 text-lg font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="advancePaid">Advance Paid (₹)</Label>
+                        <Input
+                          id="advancePaid"
+                          type="number"
+                          min="0"
+                          max={formData.totalAmount}
+                          value={formData.advancePaid}
+                          onChange={(e) => {
+                            const advance = parseFloat(e.target.value) || 0;
+                            setFormData({
+                              ...formData, 
+                              advancePaid: advance,
+                              balance: formData.totalAmount - advance
+                            });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="balance">Balance (₹)</Label>
+                        <Input
+                          id="balance"
+                          type="number"
+                          value={formData.balance}
+                          readOnly
+                          className="bg-gray-100 text-lg font-semibold"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Notes */}
+                <Card className="border-gray-200">
+                  <CardHeader className="bg-gray-50">
+                    <CardTitle className="text-gray-800">Additional Notes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-6">
+                    <div>
+                      <Label htmlFor="notes">Notes</Label>
+                      <Textarea
+                        id="notes"
+                        value={formData.notes}
+                        onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                        placeholder="Any special instructions or notes"
+                        rows={3}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="flex justify-end space-x-3 pt-6">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit" className="bg-gradient-to-r from-blue-600 to-purple-600">
+                  <Button type="submit" className="bg-gradient-to-r from-purple-600 to-blue-600">
                     {editingOrder ? 'Update Order' : 'Create Order'}
                   </Button>
                 </div>
@@ -792,7 +949,7 @@ const Orders = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Orders</CardTitle>
             <Package className="h-5 w-5 text-blue-600" />
@@ -803,7 +960,7 @@ const Orders = () => {
           </CardContent>
         </Card>
         
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Revenue</CardTitle>
             <TrendingUp className="h-5 w-5 text-green-600" />
@@ -814,7 +971,7 @@ const Orders = () => {
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Pending Orders</CardTitle>
             <Clock className="h-5 w-5 text-orange-600" />
@@ -825,7 +982,7 @@ const Orders = () => {
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-shadow duration-300">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">In Progress</CardTitle>
             <Package className="h-5 w-5 text-purple-600" />
@@ -845,7 +1002,7 @@ const Orders = () => {
           }}
         />
       ) : currentView === 'grid' ? (
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-lg">
           <CardHeader>
             <div className="flex justify-between items-center">
               <CardTitle>Orders Overview</CardTitle>
@@ -928,7 +1085,7 @@ const Orders = () => {
           </div>
 
           {/* Orders Table */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-lg">
             <CardHeader>
               <CardTitle>Orders ({filteredOrders.length})</CardTitle>
               <CardDescription>Manage customer orders and track progress</CardDescription>
@@ -944,18 +1101,17 @@ const Orders = () => {
                           <TableHead>Order #</TableHead>
                           <TableHead>Customer</TableHead>
                           <TableHead>Contact</TableHead>
-                          <TableHead>Item</TableHead>
+                          <TableHead>Dress Type</TableHead>
                           <TableHead>Amount</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Delivery</TableHead>
-                          <TableHead>Order Date</TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {displayedOrders.map((order) => (
-                          <TableRow key={order.id}>
-                            <TableCell className="font-medium">#{order.orderNumber.slice(-3)}</TableCell>
+                          <TableRow key={order.id} className="hover:bg-gray-50">
+                            <TableCell className="font-medium">#{order.orderId.slice(-3)}</TableCell>
                             <TableCell>
                               <div>
                                 <div className="font-medium">{order.customerName}</div>
@@ -977,16 +1133,16 @@ const Orders = () => {
                             </TableCell>
                             <TableCell>
                               <div>
-                                <div className="font-medium">{order.itemType}</div>
-                                <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
+                                <div className="font-medium">{order.dressType}</div>
+                                <div className="text-sm text-gray-500">{order.items?.length || 0} items</div>
                               </div>
                             </TableCell>
                             <TableCell>
                               <div>
                                 <div className="font-medium">₹{(order.totalAmount || 0).toLocaleString()}</div>
-                                {order.remainingAmount > 0 && (
+                                {order.balance > 0 && (
                                   <div className="text-sm text-red-600 font-medium">
-                                    Balance: ₹{(order.remainingAmount || 0).toLocaleString()}
+                                    Balance: ₹{(order.balance || 0).toLocaleString()}
                                   </div>
                                 )}
                               </div>
@@ -997,9 +1153,6 @@ const Orders = () => {
                               </Badge>
                             </TableCell>
                             <TableCell>{order.deliveryDate}</TableCell>
-                            <TableCell>
-                              <div className="text-sm text-gray-600">{order.orderDate}</div>
-                            </TableCell>
                             <TableCell>
                               <div className="flex space-x-2">
                                 <Button 
@@ -1016,32 +1169,32 @@ const Orders = () => {
                                 >
                                   <Edit className="h-4 w-4" />
                                 </Button>
-                                {order.status === 'received' && (
+                                {order.status === 'Received' && (
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     className="text-blue-600"
-                                    onClick={() => updateStatus(order.id, 'in-progress')}
+                                    onClick={() => updateStatus(order.id, 'In Progress')}
                                   >
                                     Start
                                   </Button>
                                 )}
-                                {order.status === 'in-progress' && (
+                                {order.status === 'In Progress' && (
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     className="text-green-600"
-                                    onClick={() => updateStatus(order.id, 'ready')}
+                                    onClick={() => updateStatus(order.id, 'Ready')}
                                   >
                                     Ready
                                   </Button>
                                 )}
-                                {order.status === 'ready' && (
+                                {order.status === 'Ready' && (
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     className="text-purple-600"
-                                    onClick={() => updateStatus(order.id, 'delivered')}
+                                    onClick={() => updateStatus(order.id, 'Delivered')}
                                   >
                                     Deliver
                                   </Button>
@@ -1065,12 +1218,12 @@ const Orders = () => {
                   {/* Mobile Card View */}
                   <div className="md:hidden space-y-4">
                     {displayedOrders.map((order) => (
-                      <Card key={order.id} className="p-4">
+                      <Card key={order.id} className="p-4 hover:shadow-md transition-shadow">
                         <div className="flex justify-between items-start mb-3">
                           <div>
-                            <div className="font-medium">#{order.orderNumber.slice(-3)}</div>
+                            <div className="font-medium">#{order.orderId.slice(-3)}</div>
                             <div className="text-lg font-semibold">{order.customerName}</div>
-                            <div className="text-sm text-gray-500">{order.itemType} • Qty: {order.quantity}</div>
+                            <div className="text-sm text-gray-500">{order.dressType} • {order.items?.length || 0} items</div>
                           </div>
                           <Badge className={getStatusColor(order.status)} variant="outline">
                             {order.status}
@@ -1081,20 +1234,17 @@ const Orders = () => {
                           <div className="text-sm">
                             <span className="font-medium">Amount:</span> ₹{(order.totalAmount || 0).toLocaleString()}
                           </div>
-                          {order.remainingAmount > 0 && (
+                          {order.balance > 0 && (
                             <div className="text-sm text-red-600 font-medium">
-                              Balance: ₹{(order.remainingAmount || 0).toLocaleString()}
+                              Balance: ₹{(order.balance || 0).toLocaleString()}
                             </div>
                           )}
-                          <div className="text-sm">
-                            <span className="font-medium">Order Date:</span> {order.orderDate}
-                          </div>
                           <div className="text-sm">
                             <span className="font-medium">Delivery:</span> {order.deliveryDate}
                           </div>
                         </div>
 
-                        <div className="flex space-x-2">
+                        <div className="flex space-x-2 flex-wrap">
                           <Button
                             size="sm"
                             variant="outline"
@@ -1151,7 +1301,7 @@ const Orders = () => {
                   </p>
                   {!searchTerm && statusFilter === 'all' && !dateFilter && (
                     <Button 
-                      className="bg-gradient-to-r from-blue-600 to-purple-600"
+                      className="bg-gradient-to-r from-purple-600 to-blue-600"
                       onClick={() => setIsDialogOpen(true)}
                     >
                       <Plus className="h-4 w-4 mr-2" />
@@ -1174,7 +1324,7 @@ const Orders = () => {
         }}
         order={selectedOrderForDetails}
         onWhatsAppClick={openWhatsAppModal}
-        onRefresh={fetchOrders}
+        onRefresh={fetchAllData}
       />
 
       {/* WhatsApp Message Modal */}
