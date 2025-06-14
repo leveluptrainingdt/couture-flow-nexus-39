@@ -34,15 +34,16 @@ import {
   TrendingUp,
   DollarSign,
   FileText,
-  Users
+  Users,
+  RefreshCw
 } from 'lucide-react';
-import { collection, getDocs, query, orderBy, where, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Bill, formatCurrency, getBillStatusColor, calculateBillStatus, downloadPDF } from '@/utils/billingUtils';
 import { useRealTimeData } from '@/hooks/useRealTimeData';
 import { toast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import BillWhatsAppModal from '@/components/BillWhatsAppModal';
+import BillWhatsAppAdvanced from '@/components/BillWhatsAppAdvanced';
 
 const Billing = () => {
   const navigate = useNavigate();
@@ -53,6 +54,7 @@ const Billing = () => {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const filteredBills = bills.filter((bill: Bill) => {
     const matchesSearch = 
@@ -90,7 +92,7 @@ const Billing = () => {
 
   const handleDeleteBill = async (billId: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this bill?')) {
+    if (window.confirm('Are you sure you want to delete this bill? This action cannot be undone.')) {
       try {
         await deleteDoc(doc(db, 'bills', billId));
         toast({
@@ -131,6 +133,12 @@ const Billing = () => {
     }
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    // The real-time data hook will automatically refresh
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
   const stats = {
     totalBills: bills.length,
     totalRevenue: bills.reduce((sum: number, bill: Bill) => sum + bill.totalAmount, 0),
@@ -140,34 +148,45 @@ const Billing = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 animate-fade-in">
+      <div className="space-y-6 animate-fade-in p-4 sm:p-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-900">Billing</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Billing Dashboard</h1>
         </div>
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
-          <p className="mt-4 text-gray-500">Loading bills...</p>
+          <p className="mt-4 text-gray-500">Loading billing data...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in p-4 sm:p-6">
       {/* Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Billing Dashboard</h1>
-          <p className="text-gray-600">Manage bills, track payments, and generate invoices</p>
+          <p className="text-gray-600">Manage bills, track payments, and generate professional invoices</p>
         </div>
-        <Button 
-          onClick={() => navigate('/billing/new')}
-          className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
-          size="lg"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Create New Bill
-        </Button>
+        <div className="flex gap-3">
+          <Button 
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            size="lg"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button 
+            onClick={() => navigate('/billing/new')}
+            className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
+            size="lg"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Generate Bill
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -179,7 +198,7 @@ const Billing = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-900">{stats.totalBills}</div>
-            <p className="text-xs text-purple-600 mt-1">All time</p>
+            <p className="text-xs text-purple-600 mt-1">All time records</p>
           </CardContent>
         </Card>
 
@@ -192,7 +211,7 @@ const Billing = () => {
             <div className="text-2xl font-bold text-green-900">
               {formatCurrency(stats.totalRevenue)}
             </div>
-            <p className="text-xs text-green-600 mt-1">Gross revenue</p>
+            <p className="text-xs text-green-600 mt-1">Gross revenue earned</p>
           </CardContent>
         </Card>
 
@@ -237,26 +256,26 @@ const Billing = () => {
             
             <div className="flex flex-wrap gap-2">
               <Select value={filterStatus} onValueChange={(value: any) => setFilterStatus(value)}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-36">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="partial">Partial</SelectItem>
-                  <SelectItem value="unpaid">Unpaid</SelectItem>
+                  <SelectItem value="paid">✅ Paid</SelectItem>
+                  <SelectItem value="partial">⚠️ Partial</SelectItem>
+                  <SelectItem value="unpaid">❌ Unpaid</SelectItem>
                 </SelectContent>
               </Select>
               
               <Select value={filterDateRange} onValueChange={(value: any) => setFilterDateRange(value)}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-36">
                   <SelectValue placeholder="Date" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Time</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="today">📅 Today</SelectItem>
+                  <SelectItem value="week">📊 This Week</SelectItem>
+                  <SelectItem value="month">📈 This Month</SelectItem>
                 </SelectContent>
               </Select>
               
@@ -302,7 +321,7 @@ const Billing = () => {
               <h3 className="text-lg font-medium text-gray-900 mb-2">No bills found</h3>
               <p className="text-gray-500 mb-6">
                 {bills.length === 0 
-                  ? "Create your first bill to get started." 
+                  ? "Create your first professional bill to get started." 
                   : "Try adjusting your search or filter criteria."
                 }
               </p>
@@ -311,7 +330,7 @@ const Billing = () => {
                 className="bg-purple-600 hover:bg-purple-700"
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Create New Bill
+                Generate New Bill
               </Button>
             </div>
           ) : viewMode === 'table' ? (
@@ -346,7 +365,7 @@ const Billing = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {new Date(bill.date?.toDate?.() || bill.date).toLocaleDateString()}
+                          {new Date(bill.date?.toDate?.() || bill.date).toLocaleDateString('en-IN')}
                         </TableCell>
                         <TableCell className="font-medium">{formatCurrency(bill.totalAmount)}</TableCell>
                         <TableCell className="text-green-600">{formatCurrency(bill.paidAmount)}</TableCell>
@@ -355,7 +374,7 @@ const Billing = () => {
                         </TableCell>
                         <TableCell>
                           <Badge className={getBillStatusColor(status)}>
-                            {status.charAt(0).toUpperCase() + status.slice(1)}
+                            {status === 'paid' ? '✅ Paid' : status === 'partial' ? '⚠️ Partial' : '❌ Unpaid'}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -429,11 +448,11 @@ const Billing = () => {
                         <div>
                           <CardTitle className="text-lg text-purple-600">{bill.billId}</CardTitle>
                           <p className="text-sm text-gray-500">
-                            {new Date(bill.date?.toDate?.() || bill.date).toLocaleDateString()}
+                            {new Date(bill.date?.toDate?.() || bill.date).toLocaleDateString('en-IN')}
                           </p>
                         </div>
                         <Badge className={getBillStatusColor(status)}>
-                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                          {status === 'paid' ? '✅ Paid' : status === 'partial' ? '⚠️ Partial' : '❌ Unpaid'}
                         </Badge>
                       </div>
                     </CardHeader>
@@ -483,9 +502,9 @@ const Billing = () => {
         </CardContent>
       </Card>
 
-      {/* WhatsApp Modal */}
+      {/* Advanced WhatsApp Modal */}
       {showWhatsAppModal && selectedBill && (
-        <BillWhatsAppModal
+        <BillWhatsAppAdvanced
           isOpen={showWhatsAppModal}
           onClose={() => {
             setShowWhatsAppModal(false);
@@ -493,7 +512,10 @@ const Billing = () => {
           }}
           customerName={selectedBill.customerName}
           customerPhone={selectedBill.customerPhone}
-          defaultMessage={`Hello ${selectedBill.customerName}! 🪡✨\n\nYour bill ${selectedBill.billId} for ${formatCurrency(selectedBill.totalAmount)} is ready from Swetha's Couture.\n\nThank you for choosing us! 💜`}
+          billId={selectedBill.billId}
+          totalAmount={selectedBill.totalAmount}
+          balance={selectedBill.balance}
+          upiLink={selectedBill.upiLink}
         />
       )}
     </div>

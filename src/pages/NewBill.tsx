@@ -18,7 +18,7 @@ import {
   calculateBillStatus
 } from '@/utils/billingUtils';
 import { toast } from '@/hooks/use-toast';
-import BillForm from '@/components/BillForm';
+import BillFormAdvanced from '@/components/BillFormAdvanced';
 
 interface Customer {
   id: string;
@@ -81,7 +81,7 @@ const NewBill = () => {
         });
         
         toast({
-          title: "Success",
+          title: "✅ Success",
           description: `Bill ${billData.billId} updated successfully`,
         });
       } else {
@@ -96,7 +96,7 @@ const NewBill = () => {
         await addDoc(collection(db, 'bills'), newBillData);
         
         toast({
-          title: "Success",
+          title: "✅ Success",
           description: `Bill ${newBillData.billId} created successfully`,
         });
       }
@@ -105,7 +105,7 @@ const NewBill = () => {
     } catch (error) {
       console.error('Error saving bill:', error);
       toast({
-        title: "Error",
+        title: "❌ Error",
         description: `Failed to ${isEditing ? 'update' : 'create'} bill`,
         variant: "destructive",
       });
@@ -115,7 +115,9 @@ const NewBill = () => {
   };
 
   const handleCancel = () => {
-    navigate('/billing');
+    if (window.confirm('Are you sure you want to cancel? Any unsaved changes will be lost.')) {
+      navigate('/billing');
+    }
   };
 
   if (loading && isEditing) {
@@ -127,40 +129,50 @@ const NewBill = () => {
             Back to Billing
           </Button>
         </div>
-        <div className="text-center py-8">Loading bill details...</div>
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-500">Loading bill details...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 p-4 sm:p-6 animate-fade-in">
-      {/* Header - Responsive */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        <Button variant="outline" onClick={() => navigate('/billing')} size="sm">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Billing
-        </Button>
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-            {isEditing ? 'Edit Bill' : 'Create New Bill'}
-          </h1>
-          <p className="text-sm sm:text-base text-gray-500">
-            {isEditing ? 'Update bill details and recalculate totals' : 'Generate a new bill for your customer'}
-          </p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header Navigation */}
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" onClick={() => navigate('/billing')} size="sm">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Billing
+          </Button>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+              {isEditing ? '✏️ Edit Bill' : '📄 Create New Bill'}
+            </h1>
+            <p className="text-sm text-gray-500">
+              {isEditing ? 'Update bill details and recalculate totals' : 'Generate a professional bill for your customer'}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Bill Form */}
-      <Card className="w-full">
-        <CardContent className="p-0">
-          <BillForm
-            billId={billId}
-            bill={bill}
-            onSave={handleBillSave}
-            onCancel={handleCancel}
-          />
-        </CardContent>
-      </Card>
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto">
+        <BillFormAdvanced
+          billId={billId}
+          bill={bill}
+          onSave={handleBillSave}
+          onCancel={handleCancel}
+          onSuccess={() => {
+            toast({
+              title: "🎉 Bill Saved",
+              description: "Your bill has been saved successfully!",
+            });
+            navigate('/billing');
+          }}
+        />
+      </div>
     </div>
   );
 };
