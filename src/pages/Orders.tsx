@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -777,7 +776,7 @@ const Orders = () => {
                     <CardContent className="space-y-4 pt-6">
                       <div>
                         <Label htmlFor="status">Status</Label>
-                        <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value as Order['status']})}>
+                        <Select value={formData.status} onValueChange={(value) => setFormData({...formData, status: value as CustomOrder['status']})}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -996,7 +995,19 @@ const Orders = () => {
 
       {currentView === 'calendar' ? (
         <OrderCalendar 
-          orders={orders} 
+          orders={orders.map(order => ({
+            id: order.id,
+            orderId: order.orderId,
+            orderNumber: order.orderId,
+            customerName: order.customerName,
+            itemType: order.dressType,
+            orderDate: order.createdAt?.toDate?.() || new Date(),
+            quantity: order.items.reduce((sum, item) => sum + item.qty, 0),
+            advanceAmount: order.advancePaid,
+            remainingAmount: order.balance,
+            deliveryDate: new Date(order.deliveryDate),
+            status: order.status
+          }))} 
           onDateSelect={(date, dayOrders) => {
             console.log('Selected date:', date, 'Orders:', dayOrders);
           }}
@@ -1019,9 +1030,31 @@ const Orders = () => {
           </CardHeader>
           <CardContent>
             <OrderGridView
-              orders={orders}
-              onOrderClick={handleGridViewOrderClick}
-              onWhatsAppClick={openWhatsAppModal}
+              orders={orders.map(order => ({
+                id: order.id,
+                orderId: order.orderId,
+                orderNumber: order.orderId,
+                customerName: order.customerName,
+                itemType: order.dressType,
+                orderDate: order.createdAt?.toDate?.() || new Date(),
+                quantity: order.items.reduce((sum, item) => sum + item.qty, 0),
+                advanceAmount: order.advancePaid,
+                remainingAmount: order.balance,
+                deliveryDate: new Date(order.deliveryDate),
+                status: order.status
+              }))}
+              onOrderClick={(order) => {
+                const customOrder = orders.find(o => o.orderId === order.orderId);
+                if (customOrder) {
+                  handleGridViewOrderClick(customOrder);
+                }
+              }}
+              onWhatsAppClick={(order) => {
+                const customOrder = orders.find(o => o.orderId === order.orderId);
+                if (customOrder) {
+                  openWhatsAppModal(customOrder);
+                }
+              }}
               selectedStatus={gridSelectedStatus}
             />
           </CardContent>
@@ -1322,8 +1355,25 @@ const Orders = () => {
           setOrderDetailsModalOpen(false);
           setSelectedOrderForDetails(null);
         }}
-        order={selectedOrderForDetails}
-        onWhatsAppClick={openWhatsAppModal}
+        order={selectedOrderForDetails ? {
+          id: selectedOrderForDetails.id,
+          orderId: selectedOrderForDetails.orderId,
+          orderNumber: selectedOrderForDetails.orderId,
+          customerName: selectedOrderForDetails.customerName,
+          itemType: selectedOrderForDetails.dressType,
+          orderDate: selectedOrderForDetails.createdAt?.toDate?.() || new Date(),
+          quantity: selectedOrderForDetails.items.reduce((sum, item) => sum + item.qty, 0),
+          advanceAmount: selectedOrderForDetails.advancePaid,
+          remainingAmount: selectedOrderForDetails.balance,
+          deliveryDate: new Date(selectedOrderForDetails.deliveryDate),
+          status: selectedOrderForDetails.status
+        } : null}
+        onWhatsAppClick={(order) => {
+          const customOrder = orders.find(o => o.orderId === order.orderId);
+          if (customOrder) {
+            openWhatsAppModal(customOrder);
+          }
+        }}
         onRefresh={fetchAllData}
       />
 
