@@ -40,7 +40,7 @@ interface OrderItem {
   barcodeUrl?: string;
 }
 
-interface Order {
+interface CustomOrder {
   id: string;
   orderId: string;
   customerId?: string;
@@ -66,23 +66,23 @@ interface Order {
 
 const Orders = () => {
   const { userData } = useAuth();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<CustomOrder[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [editingOrder, setEditingOrder] = useState<CustomOrder | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState<Date | undefined>();
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
-  const [selectedOrderForWhatsApp, setSelectedOrderForWhatsApp] = useState<Order | null>(null);
+  const [selectedOrderForWhatsApp, setSelectedOrderForWhatsApp] = useState<CustomOrder | null>(null);
   const [currentView, setCurrentView] = useState<'list' | 'calendar' | 'grid'>('list');
   const [visibleOrders, setVisibleOrders] = useState(5);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [orderDetailsModalOpen, setOrderDetailsModalOpen] = useState(false);
-  const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<Order | null>(null);
+  const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<CustomOrder | null>(null);
   const [gridSelectedStatus, setGridSelectedStatus] = useState<string>('');
   const [orderCounter, setOrderCounter] = useState(1000);
   const [generatingBarcode, setGeneratingBarcode] = useState<string>('');
@@ -99,7 +99,7 @@ const Orders = () => {
     dressType: '',
     requiredMaterials: [] as any[],
     assignedStaff: [] as any[],
-    status: 'Received' as Order['status'],
+    status: 'Received' as CustomOrder['status'],
     progress: { done: 0, total: 1 },
     totalAmount: 0,
     advancePaid: 0,
@@ -146,7 +146,7 @@ const Orders = () => {
         const ordersData = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        })) as Order[];
+        })) as CustomOrder[];
         setOrders(ordersData);
         setLoading(false);
       });
@@ -377,7 +377,7 @@ const Orders = () => {
     });
   };
 
-  const handleEdit = (order: Order) => {
+  const handleEdit = (order: CustomOrder) => {
     setEditingOrder(order);
     setFormData({
       orderId: order.orderId,
@@ -421,7 +421,7 @@ const Orders = () => {
     }
   };
 
-  const updateStatus = async (orderId: string, newStatus: Order['status']) => {
+  const updateStatus = async (orderId: string, newStatus: CustomOrder['status']) => {
     try {
       await updateDoc(doc(db, 'orders', orderId), {
         status: newStatus,
@@ -441,7 +441,7 @@ const Orders = () => {
     }
   };
 
-  const getStatusColor = (status: Order['status']) => {
+  const getStatusColor = (status: CustomOrder['status']) => {
     switch (status) {
       case 'Received': return 'bg-blue-100 text-blue-700 border-blue-200';
       case 'In Progress': return 'bg-orange-100 text-orange-700 border-orange-200';
@@ -452,12 +452,12 @@ const Orders = () => {
     }
   };
 
-  const openWhatsAppModal = (order: Order) => {
+  const openWhatsAppModal = (order: CustomOrder) => {
     setSelectedOrderForWhatsApp(order);
     setWhatsappModalOpen(true);
   };
 
-  const openOrderDetails = (order: Order) => {
+  const openOrderDetails = (order: CustomOrder) => {
     setSelectedOrderForDetails(order);
     setOrderDetailsModalOpen(true);
   };
@@ -470,7 +470,7 @@ const Orders = () => {
     }
   };
 
-  const filterOrders = (orders: Order[]) => {
+  const filterOrders = (orders: CustomOrder[]) => {
     let filtered = orders;
 
     if (searchTerm) {
