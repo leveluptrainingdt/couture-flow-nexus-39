@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -9,12 +10,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Package, AlertTriangle, TrendingUp, TrendingDown, Search, Edit, Trash2, Phone, MessageCircle, Minus } from 'lucide-react';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { Plus, Package, AlertTriangle, TrendingUp, TrendingDown, Search, Edit, Trash2, Phone, MessageCircle, Minus, Star, Filter } from 'lucide-react';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import ContactActions from '@/components/ContactActions';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
 interface InventoryItem {
   id: string;
@@ -35,17 +37,20 @@ interface InventoryItem {
   notes?: string;
   lastUpdated: any;
   createdAt: any;
+  usageCount?: number;
 }
 
 interface InventoryType {
   id: string;
   name: string;
+  usageCount?: number;
   createdAt: any;
 }
 
 interface InventoryCategory {
   id: string;
   name: string;
+  usageCount?: number;
   createdAt: any;
 }
 
@@ -60,6 +65,8 @@ const Inventory = () => {
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   const [formData, setFormData] = useState({
@@ -314,6 +321,7 @@ const Inventory = () => {
     try {
       await addDoc(collection(db, 'inventoryTypes'), {
         name: newType.trim(),
+        usageCount: 0,
         createdAt: serverTimestamp()
       });
 
@@ -340,6 +348,7 @@ const Inventory = () => {
     try {
       await addDoc(collection(db, 'inventoryCategories'), {
         name: newCategory.trim(),
+        usageCount: 0,
         createdAt: serverTimestamp()
       });
 
@@ -410,12 +419,41 @@ const Inventory = () => {
     setExpandedItems(newExpanded);
   };
 
-  const filteredItems = items.filter(item =>
-    (item?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item?.category || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item?.type || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item?.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  if (!userData) {
+    return <LoadingSpinner type="page" />;
+  }
+
+  if (loading) {
+    return <LoadingSpinner type="page" />;
+  }
+
+  // Apply filters
+  const filteredItems = items.filter(item => {
+    if (!item) return false;
+    
+    const matchesSearch = (
+      (item.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.category || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.type || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.supplier?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    
+    const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
+    const matchesType = typeFilter === 'all' || item.type === typeFilter;
+    
+    return matchesSearch && matchesCategory && matchesType;
+  });
+
+  // Get top 5 categories and types for "Mostly Used" filters
+  const mostUsedCategories = categories
+    .filter(cat => cat?.usageCount && cat.usageCount > 0)
+    .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
+    .slice(0, 5);
+
+  const mostUsedTypes = types
+    .filter(type => type?.usageCount && type.usageCount > 0)
+    .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
+    .slice(0, 5);
 
   // Safe calculations with proper null checks
   const lowStockItems = items.filter(item => 
@@ -427,42 +465,6 @@ const Inventory = () => {
   const totalItems = items.reduce((sum, item) => 
     sum + (item?.quantity || 0), 0
   );
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <Skeleton className="h-8 w-48 mb-2" />
-            <Skeleton className="h-4 w-64" />
-          </div>
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardHeader>
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-6 w-16" />
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-32" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -529,6 +531,9 @@ const Inventory = () => {
                         {categories.map(cat => (
                           <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
                         ))}
+                        <SelectItem value="__add_new__" className="text-blue-600 font-medium">
+                          + Add New Category
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -545,6 +550,9 @@ const Inventory = () => {
                         {types.map(type => (
                           <SelectItem key={type.id} value={type.name}>{type.name}</SelectItem>
                         ))}
+                        <SelectItem value="__add_new__" className="text-blue-600 font-medium">
+                          + Add New Type
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -570,13 +578,7 @@ const Inventory = () => {
                       step="0.01"
                       value={formData.quantity}
                       onChange={(e) => setFormData({...formData, quantity: e.target.value})}
-                      placeholder=""
-                      onFocus={(e) => {
-                        if (e.target.value === '0') e.target.value = '';
-                      }}
-                      onBlur={(e) => {
-                        if (e.target.value === '') e.target.value = '0';
-                      }}
+                      placeholder="Enter quantity"
                       required
                     />
                   </div>
@@ -602,13 +604,7 @@ const Inventory = () => {
                       step="0.01"
                       value={formData.reorderLevel}
                       onChange={(e) => setFormData({...formData, reorderLevel: e.target.value})}
-                      placeholder=""
-                      onFocus={(e) => {
-                        if (e.target.value === '0') e.target.value = '';
-                      }}
-                      onBlur={(e) => {
-                        if (e.target.value === '') e.target.value = '0';
-                      }}
+                      placeholder="Enter reorder level"
                       required
                     />
                   </div>
@@ -623,13 +619,7 @@ const Inventory = () => {
                     step="0.01"
                     value={formData.costPerUnit}
                     onChange={(e) => setFormData({...formData, costPerUnit: e.target.value})}
-                    placeholder=""
-                    onFocus={(e) => {
-                      if (e.target.value === '0') e.target.value = '';
-                    }}
-                    onBlur={(e) => {
-                      if (e.target.value === '') e.target.value = '0';
-                    }}
+                    placeholder="Enter unit cost"
                     required
                   />
                 </div>
@@ -742,9 +732,61 @@ const Inventory = () => {
         </Card>
       </div>
 
-      {/* Search */}
-      <div className="flex items-center space-x-2">
-        <div className="relative flex-1 max-w-sm">
+      {/* Mostly Used Filters */}
+      {(mostUsedCategories.length > 0 || mostUsedTypes.length > 0) && (
+        <Card className="border-0 shadow-md">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Star className="h-5 w-5 text-yellow-600" />
+              <span>Mostly Used</span>
+            </CardTitle>
+            <CardDescription>Quick filters for your most frequently used categories and types</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {mostUsedCategories.length > 0 && (
+              <div>
+                <Label className="text-sm font-medium text-gray-700 mb-2 block">Top Categories</Label>
+                <div className="flex flex-wrap gap-2">
+                  {mostUsedCategories.map((category) => (
+                    <Button
+                      key={category.id}
+                      variant={categoryFilter === category.name ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setCategoryFilter(categoryFilter === category.name ? 'all' : category.name)}
+                      className="text-xs"
+                    >
+                      {category.name} ({category.usageCount || 0})
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {mostUsedTypes.length > 0 && (
+              <div>
+                <Label className="text-sm font-medium text-gray-700 mb-2 block">Top Types</Label>
+                <div className="flex flex-wrap gap-2">
+                  {mostUsedTypes.map((type) => (
+                    <Button
+                      key={type.id}
+                      variant={typeFilter === type.name ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setTypeFilter(typeFilter === type.name ? 'all' : type.name)}
+                      className="text-xs"
+                    >
+                      {type.name} ({type.usageCount || 0})
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Search and Filters */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
           <Input
             placeholder="Search items..."
@@ -753,6 +795,28 @@ const Inventory = () => {
             className="pl-10"
           />
         </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Filter by category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {categories.map(cat => (
+              <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Filter by type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            {types.map(type => (
+              <SelectItem key={type.id} value={type.name}>{type.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Low Stock Alert */}
@@ -983,9 +1047,12 @@ const Inventory = () => {
               <Package className="h-16 w-16 text-gray-400 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 mb-2">No inventory items</h3>
               <p className="text-gray-600 mb-6">
-                {searchTerm ? 'No items match your search.' : 'Add your first product to get started.'}
+                {searchTerm || categoryFilter !== 'all' || typeFilter !== 'all' 
+                  ? 'No items match your current filters.' 
+                  : 'Add your first product to get started.'
+                }
               </p>
-              {!searchTerm && (
+              {!searchTerm && categoryFilter === 'all' && typeFilter === 'all' && (
                 <Button 
                   className="bg-gradient-to-r from-blue-600 to-purple-600"
                   onClick={() => setIsDialogOpen(true)}
@@ -1018,7 +1085,12 @@ const Inventory = () => {
             <div className="max-h-60 overflow-y-auto space-y-2">
               {types.map((type) => (
                 <div key={type.id} className="flex justify-between items-center p-2 border rounded">
-                  <span>{type.name}</span>
+                  <div>
+                    <span>{type.name}</span>
+                    {type.usageCount && (
+                      <span className="text-xs text-gray-500 ml-2">({type.usageCount} uses)</span>
+                    )}
+                  </div>
                   <Button
                     size="sm"
                     variant="outline"
@@ -1053,7 +1125,12 @@ const Inventory = () => {
             <div className="max-h-60 overflow-y-auto space-y-2">
               {categories.map((category) => (
                 <div key={category.id} className="flex justify-between items-center p-2 border rounded">
-                  <span>{category.name}</span>
+                  <div>
+                    <span>{category.name}</span>
+                    {category.usageCount && (
+                      <span className="text-xs text-gray-500 ml-2">({category.usageCount} uses)</span>
+                    )}
+                  </div>
                   <Button
                     size="sm"
                     variant="outline"

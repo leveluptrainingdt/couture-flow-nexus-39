@@ -7,79 +7,70 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Users, Search, Edit, Trash2, Clock, CheckCircle, Upload } from 'lucide-react';
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy, where } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Plus, Users, Clock, CheckCircle, Search, Edit, Trash2, Phone, MessageCircle } from 'lucide-react';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
-import { uploadToCloudinary } from '@/utils/cloudinaryConfig';
+import LoadingSpinner from '@/components/LoadingSpinner';
+import ContactActions from '@/components/ContactActions';
 
 interface StaffMember {
   id: string;
   name: string;
-  email: string;
   phone: string;
-  role: 'staff';
-  position: string;
-  salary: number;
-  profileImage?: string;
-  isActive: boolean;
-  startDate: string;
-  uid?: string;
-  createdAt: any;
-}
-
-interface Attendance {
-  id: string;
-  staffId: string;
-  staffName: string;
-  date: string;
-  checkIn?: string;
-  checkOut?: string;
-  status: 'present' | 'absent' | 'late' | 'on-leave';
-  hoursWorked?: number;
+  email?: string;
+  role: string;
+  department: string;
+  skills: string[];
+  status: 'active' | 'inactive';
+  joinDate: any;
+  salary?: number;
+  address?: string;
+  emergencyContact?: {
+    name: string;
+    phone: string;
+    relation: string;
+  };
   createdAt: any;
 }
 
 const Staff = () => {
   const { userData } = useAuth();
   const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
     phone: '',
-    position: '',
-    salary: 0,
-    startDate: '',
-    password: ''
+    email: '',
+    role: '',
+    department: '',
+    skills: '',
+    salary: '',
+    address: '',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    emergencyContactRelation: ''
   });
 
-  const positions = [
-    'Tailor',
-    'Designer',
-    'Cutter',
-    'Embroidery Specialist',
-    'Quality Controller',
-    'Assistant',
-    'Manager',
-    'Other'
-  ];
+  const roles = ['Tailor', 'Cutter', 'Designer', 'Finisher', 'Assistant', 'Manager'];
+  const departments = ['Production', 'Design', 'Finishing', 'Quality Control', 'Administration'];
 
   useEffect(() => {
+    if (!userData) {
+      setLoading(false);
+      return;
+    }
     fetchStaff();
-    fetchTodayAttendance();
-  }, []);
+  }, [userData]);
 
   const fetchStaff = async () => {
     try {
+      setLoading(true);
       const staffQuery = query(
         collection(db, 'staff'),
         orderBy('createdAt', 'desc')
@@ -90,7 +81,7 @@ const Staff = () => {
         ...doc.data()
       })) as StaffMember[];
       
-      setStaff(staffData);
+      setStaff(staffData || []);
     } catch (error) {
       console.error('Error fetching staff:', error);
       toast({
@@ -98,44 +89,34 @@ const Staff = () => {
         description: "Failed to fetch staff members",
         variant: "destructive",
       });
+      setStaff([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchTodayAttendance = async () => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const attendanceQuery = query(
-        collection(db, 'attendance'),
-        where('date', '==', today),
-        orderBy('createdAt', 'desc')
-      );
-      const attendanceSnapshot = await getDocs(attendanceQuery);
-      const attendanceData = attendanceSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Attendance[];
-      
-      setAttendance(attendanceData);
-    } catch (error) {
-      console.error('Error fetching attendance:', error);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      let staffData: any = {
+      const staffData = {
         name: formData.name,
-        email: formData.email,
         phone: formData.phone,
-        role: 'staff',
-        position: formData.position,
-        salary: formData.salary || 0,
-        startDate: formData.startDate,
-        isActive: true,
-        ...(editingStaff ? { updatedAt: serverTimestamp() } : { createdAt: serverTimestamp() })
+        email: formData.email || undefined,
+        role: formData.role,
+        department: formData.department,
+        skills: formData.skills.split(',').map(skill => skill.trim()).filter(Boolean),
+        salary: formData.salary ? parseFloat(formData.salary) : undefined,
+        address: formData.address || undefined,
+        emergencyContact: formData.emergencyContactName ? {
+          name: formData.emergencyContactName,
+          phone: formData.emergencyContactPhone,
+          relation: formData.emergencyContactRelation
+        } : undefined,
+        status: 'active' as const,
+        ...(editingStaff ? {} : { 
+          joinDate: serverTimestamp(),
+          createdAt: serverTimestamp() 
+        })
       };
 
       if (editingStaff) {
@@ -145,29 +126,6 @@ const Staff = () => {
           description: "Staff member updated successfully",
         });
       } else {
-        // Create Firebase Auth user for staff
-        if (formData.password) {
-          try {
-            const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-            staffData.uid = userCredential.user.uid;
-
-            // Create user document in users collection
-            await addDoc(collection(db, 'users'), {
-              uid: userCredential.user.uid,
-              email: formData.email,
-              role: 'staff',
-              name: formData.name
-            });
-          } catch (authError: any) {
-            console.error('Error creating auth user:', authError);
-            toast({
-              title: "Warning",
-              description: "Staff added but login credentials creation failed",
-              variant: "destructive",
-            });
-          }
-        }
-
         await addDoc(collection(db, 'staff'), staffData);
         toast({
           title: "Success",
@@ -180,7 +138,7 @@ const Staff = () => {
       resetForm();
       fetchStaff();
     } catch (error) {
-      console.error('Error saving staff:', error);
+      console.error('Error saving staff member:', error);
       toast({
         title: "Error",
         description: "Failed to save staff member",
@@ -192,25 +150,33 @@ const Staff = () => {
   const resetForm = () => {
     setFormData({
       name: '',
-      email: '',
       phone: '',
-      position: '',
-      salary: 0,
-      startDate: '',
-      password: ''
+      email: '',
+      role: '',
+      department: '',
+      skills: '',
+      salary: '',
+      address: '',
+      emergencyContactName: '',
+      emergencyContactPhone: '',
+      emergencyContactRelation: ''
     });
   };
 
-  const handleEdit = (staffMember: StaffMember) => {
-    setEditingStaff(staffMember);
+  const handleEdit = (member: StaffMember) => {
+    setEditingStaff(member);
     setFormData({
-      name: staffMember.name || '',
-      email: staffMember.email || '',
-      phone: staffMember.phone || '',
-      position: staffMember.position || '',
-      salary: staffMember.salary || 0,
-      startDate: staffMember.startDate || '',
-      password: ''
+      name: member.name || '',
+      phone: member.phone || '',
+      email: member.email || '',
+      role: member.role || '',
+      department: member.department || '',
+      skills: (member.skills || []).join(', '),
+      salary: member.salary?.toString() || '',
+      address: member.address || '',
+      emergencyContactName: member.emergencyContact?.name || '',
+      emergencyContactPhone: member.emergencyContact?.phone || '',
+      emergencyContactRelation: member.emergencyContact?.relation || ''
     });
     setIsDialogOpen(true);
   };
@@ -225,7 +191,7 @@ const Staff = () => {
         });
         fetchStaff();
       } catch (error) {
-        console.error('Error deleting staff:', error);
+        console.error('Error deleting staff member:', error);
         toast({
           title: "Error",
           description: "Failed to delete staff member",
@@ -235,74 +201,44 @@ const Staff = () => {
     }
   };
 
-  const uploadProfileImage = async (file: File, staffId: string) => {
-    setUploadingImage(true);
+  const toggleStatus = async (staffId: string, currentStatus: string) => {
     try {
-      const imageUrl = await uploadToCloudinary(file);
-      
+      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
       await updateDoc(doc(db, 'staff', staffId), {
-        profileImage: imageUrl,
-        updatedAt: serverTimestamp()
+        status: newStatus
       });
-
+      
       toast({
         title: "Success",
-        description: "Profile image uploaded successfully",
+        description: `Staff member marked as ${newStatus}`,
       });
       fetchStaff();
     } catch (error) {
-      console.error('Error uploading image:', error);
+      console.error('Error updating staff status:', error);
       toast({
         title: "Error",
-        description: "Failed to upload image",
+        description: "Failed to update staff status",
         variant: "destructive",
       });
-    } finally {
-      setUploadingImage(false);
     }
   };
 
-  const filteredStaff = staff.filter(member =>
-    (member.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (member.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (member.position || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const getAttendanceStatus = (staffId: string) => {
-    const todayAttendance = attendance.find(att => att.staffId === staffId);
-    if (!todayAttendance) return 'absent';
-    if (todayAttendance.checkIn && !todayAttendance.checkOut) return 'present';
-    if (todayAttendance.checkIn && todayAttendance.checkOut) return 'completed';
-    return 'absent';
-  };
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Staff Management</h1>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader>
-                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="h-8 bg-gray-200 rounded w-1/2"></div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
+  if (!userData) {
+    return <LoadingSpinner type="page" />;
   }
 
-  // Safe calculations with null checks
+  if (loading) {
+    return <LoadingSpinner type="page" />;
+  }
+
+  const filteredStaff = staff.filter(member =>
+    (member?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (member?.role || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (member?.department || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const activeStaff = staff.filter(member => member?.status === 'active').length;
   const totalStaff = staff.length;
-  const activeStaff = staff.filter(member => member.isActive).length;
-  const presentToday = attendance.filter(att => att.status === 'present' || att.checkIn).length;
-  const totalSalary = staff.reduce((sum, member) => sum + (member.salary || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -310,12 +246,12 @@ const Staff = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Staff Management</h1>
-          <p className="text-gray-600">Manage staff members and attendance</p>
+          <p className="text-gray-600">Manage your team members and assignments</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button 
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              className="bg-gradient-to-r from-blue-600 to-purple-600"
               onClick={() => {
                 setEditingStaff(null);
                 resetForm();
@@ -325,7 +261,7 @@ const Staff = () => {
               Add Staff Member
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingStaff ? 'Edit Staff Member' : 'Add New Staff Member'}
@@ -335,95 +271,140 @@ const Staff = () => {
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  placeholder="Staff member name"
-                  required
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    placeholder="Enter full name"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="phone">Phone Number</Label>
+                  <Input
+                    id="phone"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    placeholder="Enter phone number"
+                    required
+                  />
+                </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="role">Role</Label>
+                  <Select value={formData.role} onValueChange={(value) => setFormData({...formData, role: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roles.map(role => (
+                        <SelectItem key={role} value={role}>{role}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="department">Department</Label>
+                  <Select value={formData.department} onValueChange={(value) => setFormData({...formData, department: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {departments.map(dept => (
+                        <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div>
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Email (Optional)</Label>
                 <Input
                   id="email"
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  placeholder="Email address"
-                  required
+                  placeholder="Enter email address"
                 />
               </div>
-              {!editingStaff && (
-                <div>
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    placeholder="Login password"
-                    required
-                  />
-                </div>
-              )}
+
               <div>
-                <Label htmlFor="phone">Phone Number</Label>
+                <Label htmlFor="skills">Skills (comma separated)</Label>
                 <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  placeholder="Phone number"
-                  required
+                  id="skills"
+                  value={formData.skills}
+                  onChange={(e) => setFormData({...formData, skills: e.target.value})}
+                  placeholder="e.g., Embroidery, Pattern Making, Alterations"
                 />
               </div>
-              <div>
-                <Label htmlFor="position">Position</Label>
-                <select
-                  id="position"
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  value={formData.position}
-                  onChange={(e) => setFormData({...formData, position: e.target.value})}
-                  required
-                >
-                  <option value="">Select position</option>
-                  {positions.map(position => (
-                    <option key={position} value={position}>{position}</option>
-                  ))}
-                </select>
-              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="salary">Monthly Salary (₹)</Label>
+                  <Label htmlFor="salary">Monthly Salary (Optional)</Label>
                   <Input
                     id="salary"
                     type="number"
-                    min="0"
                     value={formData.salary}
-                    onChange={(e) => setFormData({...formData, salary: parseFloat(e.target.value) || 0})}
-                    placeholder="0"
-                    required
+                    onChange={(e) => setFormData({...formData, salary: e.target.value})}
+                    placeholder="Enter salary amount"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="startDate">Start Date</Label>
+                  <Label htmlFor="address">Address (Optional)</Label>
                   <Input
-                    id="startDate"
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) => setFormData({...formData, startDate: e.target.value})}
-                    required
+                    id="address"
+                    value={formData.address}
+                    onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    placeholder="Enter address"
                   />
                 </div>
               </div>
+
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Emergency Contact (Optional)</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="emergencyContactName">Name</Label>
+                    <Input
+                      id="emergencyContactName"
+                      value={formData.emergencyContactName}
+                      onChange={(e) => setFormData({...formData, emergencyContactName: e.target.value})}
+                      placeholder="Contact name"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="emergencyContactPhone">Phone</Label>
+                    <Input
+                      id="emergencyContactPhone"
+                      value={formData.emergencyContactPhone}
+                      onChange={(e) => setFormData({...formData, emergencyContactPhone: e.target.value})}
+                      placeholder="Contact phone"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="emergencyContactRelation">Relation</Label>
+                    <Input
+                      id="emergencyContactRelation"
+                      value={formData.emergencyContactRelation}
+                      onChange={(e) => setFormData({...formData, emergencyContactRelation: e.target.value})}
+                      placeholder="e.g., Spouse, Parent"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end space-x-3">
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancel
                 </Button>
                 <Button type="submit" className="bg-gradient-to-r from-blue-600 to-purple-600">
-                  {editingStaff ? 'Update Staff' : 'Add Staff'}
+                  {editingStaff ? 'Update Staff Member' : 'Add Staff Member'}
                 </Button>
               </div>
             </form>
@@ -432,7 +413,7 @@ const Staff = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Staff</CardTitle>
@@ -440,7 +421,7 @@ const Staff = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">{totalStaff}</div>
-            <p className="text-xs text-gray-500">All staff members</p>
+            <p className="text-xs text-gray-500">All team members</p>
           </CardContent>
         </Card>
         
@@ -451,29 +432,18 @@ const Staff = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">{activeStaff}</div>
-            <p className="text-xs text-gray-500">Currently employed</p>
+            <p className="text-xs text-gray-500">Currently working</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Present Today</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Departments</CardTitle>
             <Clock className="h-5 w-5 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{presentToday}</div>
-            <p className="text-xs text-gray-500">Checked in today</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Payroll</CardTitle>
-            <Users className="h-5 w-5 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">₹{totalSalary.toLocaleString()}</div>
-            <p className="text-xs text-gray-500">Monthly salary budget</p>
+            <div className="text-2xl font-bold text-gray-900">{departments.length}</div>
+            <p className="text-xs text-gray-500">Active departments</p>
           </CardContent>
         </Card>
       </div>
@@ -491,118 +461,70 @@ const Staff = () => {
         </div>
       </div>
 
-      {/* Staff Table */}
+      {/* Staff List */}
       <Card className="border-0 shadow-md">
         <CardHeader>
           <CardTitle>Staff Members</CardTitle>
-          <CardDescription>Manage staff information and attendance</CardDescription>
+          <CardDescription>Manage your team members</CardDescription>
         </CardHeader>
         <CardContent>
           {filteredStaff.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Staff Member</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Position</TableHead>
-                  <TableHead>Salary</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Attendance</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredStaff.map((member) => (
-                  <TableRow key={member.id}>
-                    <TableCell>
-                      <div className="flex items-center space-x-3">
-                        <div className="relative">
-                          {member.profileImage ? (
-                            <img 
-                              src={member.profileImage} 
-                              alt={member.name}
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                              <Users className="h-5 w-5 text-gray-500" />
-                            </div>
+            <div className="space-y-4">
+              {filteredStaff.map((member) => (
+                <div key={member.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-4">
+                      <div>
+                        <h3 className="font-semibold">{member.name || 'Unknown'}</h3>
+                        <p className="text-sm text-gray-600">{member.role || 'No Role'} • {member.department || 'No Department'}</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(member.skills || []).slice(0, 3).map((skill, index) => (
+                            <Badge key={index} variant="outline" className="text-xs">
+                              {skill}
+                            </Badge>
+                          ))}
+                          {(member.skills || []).length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{(member.skills || []).length - 3} more
+                            </Badge>
                           )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) uploadProfileImage(file, member.id);
-                            }}
-                            style={{ display: 'none' }}
-                            id={`profile-${member.id}`}
-                          />
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="absolute -bottom-1 -right-1 h-6 w-6 p-0"
-                            onClick={() => document.getElementById(`profile-${member.id}`)?.click()}
-                            disabled={uploadingImage}
-                          >
-                            <Upload className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <div>
-                          <div className="font-medium">{member.name || 'N/A'}</div>
-                          <div className="text-sm text-gray-500">{member.email || 'N/A'}</div>
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell>{member.phone || 'N/A'}</TableCell>
-                    <TableCell>{member.position || 'N/A'}</TableCell>
-                    <TableCell>₹{(member.salary || 0).toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant={member.isActive ? "default" : "secondary"}>
-                        {member.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
                       <Badge 
-                        className={
-                          getAttendanceStatus(member.id) === 'present' ? 'bg-green-100 text-green-700' :
-                          getAttendanceStatus(member.id) === 'completed' ? 'bg-blue-100 text-blue-700' :
-                          'bg-gray-100 text-gray-700'
-                        }
-                        variant="outline"
+                        variant={member.status === 'active' ? 'default' : 'secondary'}
+                        className="cursor-pointer"
+                        onClick={() => toggleStatus(member.id, member.status)}
                       >
-                        {getAttendanceStatus(member.id)}
+                        {member.status || 'Unknown'}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEdit(member)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDelete(member.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <ContactActions 
+                      phone={member.phone}
+                      message={`Hi ${member.name}, this is regarding your work schedule.`}
+                    />
+                    <Button size="sm" variant="outline" onClick={() => handleEdit(member)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => handleDelete(member.id)}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="text-center py-12">
-              <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No staff members found</h3>
-              <p className="text-gray-600 mb-4">
-                {searchTerm ? 'No staff members match your search.' : 'Start by adding your first staff member.'}
+              <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No staff members</h3>
+              <p className="text-gray-600 mb-6">
+                {searchTerm ? 'No staff members match your search.' : 'Add your first staff member to get started.'}
               </p>
               {!searchTerm && (
                 <Button 

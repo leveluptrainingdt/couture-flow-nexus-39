@@ -1,845 +1,528 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { 
-  Form, 
-  FormControl, 
-  FormDescription, 
-  FormField, 
-  FormItem, 
-  FormLabel, 
-  FormMessage 
-} from '@/components/ui/form';
-import { 
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { updatePassword, updateEmail } from 'firebase/auth';
-import { db, auth } from '@/lib/firebase';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Separator } from '@/components/ui/separator';
+import { Settings as SettingsIcon, User, Building, Bell, Shield, Palette, Database } from 'lucide-react';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
-import { 
-  User, 
-  Store, 
-  Bell, 
-  Palette, 
-  Shield, 
-  Camera, 
-  Upload,
-  Save,
-  Eye
-} from 'lucide-react';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
-// Form schemas
-const profileSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  bio: z.string().optional(),
-});
-
-const storeSchema = z.object({
-  storeName: z.string().min(2, 'Store name is required'),
-  storeAddress: z.string().optional(),
-  gstin: z.string().optional(),
-  pan: z.string().optional(),
-  openingHours: z.string().optional(),
-});
-
-const securitySchema = z.object({
-  currentPassword: z.string().min(6, 'Password must be at least 6 characters'),
-  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
-  confirmPassword: z.string().min(6, 'Password must be at least 6 characters'),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
-
-interface UserSettings {
-  profile: {
-    name: string;
-    phone: string;
-    address: string;
-    bio: string;
-    profilePicture: string;
-  };
-  store: {
-    storeName: string;
-    storeLogo: string;
-    storeAddress: string;
-    gstin: string;
-    pan: string;
-    openingHours: string;
-  };
-  notifications: {
-    emailAlerts: {
-      newOrders: boolean;
-      lowInventory: boolean;
-      missedAppointments: boolean;
-      staffCheckin: boolean;
-      paymentReceived: boolean;
-    };
-    smsAlerts: boolean;
-    dailySummary: boolean;
-  };
-  appearance: {
-    theme: 'light' | 'dark';
-    accentColor: string;
-    fontPreference: string;
-    compactMode: boolean;
-    enableAnimations: boolean;
-    language: string;
+interface BusinessSettings {
+  businessName: string;
+  businessAddress: string;
+  businessPhone: string;
+  businessEmail: string;
+  businessLogo?: string;
+  taxNumber?: string;
+  businessHours: {
+    monday: { open: string; close: string; closed: boolean };
+    tuesday: { open: string; close: string; closed: boolean };
+    wednesday: { open: string; close: string; closed: boolean };
+    thursday: { open: string; close: string; closed: boolean };
+    friday: { open: string; close: string; closed: boolean };
+    saturday: { open: string; close: string; closed: boolean };
+    sunday: { open: string; close: string; closed: boolean };
   };
 }
 
-const defaultSettings: UserSettings = {
-  profile: {
-    name: '',
-    phone: '',
-    address: '',
-    bio: '',
-    profilePicture: '',
-  },
-  store: {
-    storeName: "Swetha's Couture",
-    storeLogo: '',
-    storeAddress: '',
-    gstin: '',
-    pan: '',
-    openingHours: 'Mon-Sat: 9AM-7PM',
-  },
-  notifications: {
-    emailAlerts: {
-      newOrders: true,
-      lowInventory: true,
-      missedAppointments: true,
-      staffCheckin: false,
-      paymentReceived: true,
-    },
-    smsAlerts: false,
-    dailySummary: true,
-  },
-  appearance: {
-    theme: 'light',
-    accentColor: '#8B5CF6',
-    fontPreference: 'Inter',
-    compactMode: false,
-    enableAnimations: true,
-    language: 'en',
-  },
-};
+interface NotificationSettings {
+  emailNotifications: boolean;
+  smsNotifications: boolean;
+  orderUpdates: boolean;
+  appointmentReminders: boolean;
+  lowStockAlerts: boolean;
+  paymentReminders: boolean;
+}
 
 const Settings = () => {
-  const { user, userData } = useAuth();
-  const [settings, setSettings] = useState<UserSettings>(defaultSettings);
+  const { userData } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Form instances
-  const profileForm = useForm<z.infer<typeof profileSchema>>({
-    resolver: zodResolver(profileSchema),
-    defaultValues: settings.profile,
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings>({
+    businessName: '',
+    businessAddress: '',
+    businessPhone: '',
+    businessEmail: '',
+    businessLogo: '',
+    taxNumber: '',
+    businessHours: {
+      monday: { open: '09:00', close: '18:00', closed: false },
+      tuesday: { open: '09:00', close: '18:00', closed: false },
+      wednesday: { open: '09:00', close: '18:00', closed: false },
+      thursday: { open: '09:00', close: '18:00', closed: false },
+      friday: { open: '09:00', close: '18:00', closed: false },
+      saturday: { open: '09:00', close: '18:00', closed: false },
+      sunday: { open: '09:00', close: '18:00', closed: true }
+    }
   });
 
-  const storeForm = useForm<z.infer<typeof storeSchema>>({
-    resolver: zodResolver(storeSchema),
-    defaultValues: settings.store,
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
+    emailNotifications: true,
+    smsNotifications: true,
+    orderUpdates: true,
+    appointmentReminders: true,
+    lowStockAlerts: true,
+    paymentReminders: true
   });
 
-  const securityForm = useForm<z.infer<typeof securitySchema>>({
-    resolver: zodResolver(securitySchema),
-    defaultValues: {
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: '',
-    },
+  const [userProfile, setUserProfile] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    role: ''
   });
 
-  // Load settings from Firestore
   useEffect(() => {
-    const loadSettings = async () => {
-      if (!user) return;
+    if (!userData) {
+      setLoading(false);
+      return;
+    }
+    
+    loadSettings();
+  }, [userData]);
+
+  const loadSettings = async () => {
+    try {
+      setLoading(true);
       
+      // Load user profile
+      setUserProfile({
+        name: userData.name || '',
+        email: userData.email || '',
+        phone: userData.phone || '',
+        role: userData.role || ''
+      });
+
+      // Try to load business settings from Firestore
       try {
-        const settingsDoc = await getDoc(doc(db, 'userSettings', user.uid));
-        if (settingsDoc.exists()) {
-          const data = settingsDoc.data() as UserSettings;
-          setSettings({ ...defaultSettings, ...data });
-          profileForm.reset(data.profile || defaultSettings.profile);
-          storeForm.reset(data.store || defaultSettings.store);
-        } else {
-          // Set default name from userData
-          const updatedSettings = {
-            ...defaultSettings,
-            profile: {
-              ...defaultSettings.profile,
-              name: userData?.name || '',
-            }
-          };
-          setSettings(updatedSettings);
-          profileForm.reset(updatedSettings.profile);
+        const businessDoc = await getDoc(doc(db, 'settings', 'business'));
+        if (businessDoc.exists()) {
+          setBusinessSettings({ ...businessSettings, ...businessDoc.data() });
         }
       } catch (error) {
-        console.error('Error loading settings:', error);
-        toast({
-          title: "Error",
-          description: "Failed to load settings",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
+        console.log('No business settings found, using defaults');
       }
-    };
 
-    loadSettings();
-  }, [user, userData]);
-
-  // Save settings to Firestore
-  const saveSettings = async (section: keyof UserSettings, data: any) => {
-    if (!user) return;
-
-    try {
-      const updatedSettings = {
-        ...settings,
-        [section]: { ...settings[section], ...data }
-      };
-      
-      await setDoc(doc(db, 'userSettings', user.uid), updatedSettings, { merge: true });
-      setSettings(updatedSettings);
-      
-      toast({
-        title: "Settings Saved",
-        description: `${section.charAt(0).toUpperCase() + section.slice(1)} settings updated successfully`,
-      });
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save settings",
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Image upload to Cloudinary
-  const uploadImage = async (file: File, folder: string) => {
-    setUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', 'ml_default'); // You'll need to set this in Cloudinary
-    formData.append('folder', folder);
-
-    try {
-      const response = await fetch(
-        'https://api.cloudinary.com/v1_1/your-cloud-name/image/upload', // Replace with your Cloudinary cloud name
-        {
-          method: 'POST',
-          body: formData,
+      // Try to load notification settings from Firestore
+      try {
+        const notificationDoc = await getDoc(doc(db, 'settings', 'notifications'));
+        if (notificationDoc.exists()) {
+          setNotificationSettings({ ...notificationSettings, ...notificationDoc.data() });
         }
-      );
-      const data = await response.json();
-      return data.secure_url;
+      } catch (error) {
+        console.log('No notification settings found, using defaults');
+      }
+
     } catch (error) {
-      console.error('Error uploading image:', error);
-      toast({
-        title: "Upload Error",
-        description: "Failed to upload image",
-        variant: "destructive",
-      });
-      return null;
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Handle profile picture upload
-  const handleProfilePictureUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const imageUrl = await uploadImage(file, 'profile_pictures');
-    if (imageUrl) {
-      await saveSettings('profile', { profilePicture: imageUrl });
-    }
-  };
-
-  // Handle store logo upload
-  const handleStoreLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const imageUrl = await uploadImage(file, 'store_logos');
-    if (imageUrl) {
-      await saveSettings('store', { storeLogo: imageUrl });
-    }
-  };
-
-  // Handle profile form submit
-  const onProfileSubmit = async (data: z.infer<typeof profileSchema>) => {
-    await saveSettings('profile', data);
-  };
-
-  // Handle store form submit
-  const onStoreSubmit = async (data: z.infer<typeof storeSchema>) => {
-    await saveSettings('store', data);
-  };
-
-  // Handle security form submit
-  const onSecuritySubmit = async (data: z.infer<typeof securitySchema>) => {
-    if (!user || !auth.currentUser) return;
-
-    try {
-      await updatePassword(auth.currentUser, data.newPassword);
-      securityForm.reset();
-      toast({
-        title: "Password Updated",
-        description: "Your password has been changed successfully",
-      });
-    } catch (error: any) {
+      console.error('Error loading settings:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to update password",
+        description: "Failed to load settings",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Handle notification settings change
-  const handleNotificationChange = (key: string, value: boolean, subKey?: string) => {
-    const updatedNotifications = { ...settings.notifications };
-    if (subKey) {
-      (updatedNotifications.emailAlerts as any)[subKey] = value;
-    } else {
-      (updatedNotifications as any)[key] = value;
+  const saveBusinessSettings = async () => {
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'settings', 'business'), businessSettings);
+      toast({
+        title: "Success",
+        description: "Business settings saved successfully",
+      });
+    } catch (error) {
+      console.error('Error saving business settings:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save business settings",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
-    saveSettings('notifications', updatedNotifications);
   };
 
-  // Handle appearance settings change
-  const handleAppearanceChange = (key: string, value: any) => {
-    const updatedAppearance = { ...settings.appearance, [key]: value };
-    saveSettings('appearance', updatedAppearance);
+  const saveNotificationSettings = async () => {
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'settings', 'notifications'), notificationSettings);
+      toast({
+        title: "Success",
+        description: "Notification settings saved successfully",
+      });
+    } catch (error) {
+      console.error('Error saving notification settings:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save notification settings",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-600"></div>
-      </div>
-    );
+  const updateBusinessHours = (day: string, field: string, value: string | boolean) => {
+    setBusinessSettings({
+      ...businessSettings,
+      businessHours: {
+        ...businessSettings.businessHours,
+        [day]: {
+          ...businessSettings.businessHours[day as keyof typeof businessSettings.businessHours],
+          [field]: value
+        }
+      }
+    });
+  };
+
+  if (!userData) {
+    return <LoadingSpinner type="page" />;
   }
 
+  if (loading) {
+    return <LoadingSpinner type="page" />;
+  }
+
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <div className="mb-8">
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600 mt-2">Manage your account and system preferences</p>
+        <p className="text-gray-600">Manage your business settings and preferences</p>
       </div>
 
-      <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="profile" className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            Profile
-          </TabsTrigger>
-          <TabsTrigger value="store" className="flex items-center gap-2">
-            <Store className="h-4 w-4" />
-            Store
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Notifications
-          </TabsTrigger>
-          <TabsTrigger value="appearance" className="flex items-center gap-2">
-            <Palette className="h-4 w-4" />
-            Appearance
-          </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            Security
-          </TabsTrigger>
+      <Tabs defaultValue="business" className="space-y-6">
+        <TabsList className="grid grid-cols-4 lg:w-[400px]">
+          <TabsTrigger value="business">Business</TabsTrigger>
+          <TabsTrigger value="profile">Profile</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="advanced">Advanced</TabsTrigger>
         </TabsList>
 
-        {/* Profile Tab */}
+        {/* Business Settings */}
+        <TabsContent value="business" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Building className="h-5 w-5" />
+                <span>Business Information</span>
+              </CardTitle>
+              <CardDescription>
+                Configure your business details and operating hours
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="businessName">Business Name</Label>
+                  <Input
+                    id="businessName"
+                    value={businessSettings.businessName}
+                    onChange={(e) => setBusinessSettings({...businessSettings, businessName: e.target.value})}
+                    placeholder="Enter business name"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="businessPhone">Business Phone</Label>
+                  <Input
+                    id="businessPhone"
+                    value={businessSettings.businessPhone}
+                    onChange={(e) => setBusinessSettings({...businessSettings, businessPhone: e.target.value})}
+                    placeholder="Enter phone number"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="businessEmail">Business Email</Label>
+                  <Input
+                    id="businessEmail"
+                    type="email"
+                    value={businessSettings.businessEmail}
+                    onChange={(e) => setBusinessSettings({...businessSettings, businessEmail: e.target.value})}
+                    placeholder="Enter email address"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="taxNumber">Tax Number (Optional)</Label>
+                  <Input
+                    id="taxNumber"
+                    value={businessSettings.taxNumber || ''}
+                    onChange={(e) => setBusinessSettings({...businessSettings, taxNumber: e.target.value})}
+                    placeholder="Enter tax number"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="businessAddress">Business Address</Label>
+                <Textarea
+                  id="businessAddress"
+                  value={businessSettings.businessAddress}
+                  onChange={(e) => setBusinessSettings({...businessSettings, businessAddress: e.target.value})}
+                  placeholder="Enter complete business address"
+                  rows={3}
+                />
+              </div>
+
+              <Separator />
+
+              <div>
+                <h3 className="text-lg font-medium mb-4">Business Hours</h3>
+                <div className="space-y-3">
+                  {days.map((day) => {
+                    const daySettings = businessSettings.businessHours[day as keyof typeof businessSettings.businessHours];
+                    return (
+                      <div key={day} className="flex items-center space-x-4">
+                        <div className="w-24">
+                          <span className="text-sm font-medium capitalize">{day}</span>
+                        </div>
+                        <Switch
+                          checked={!daySettings.closed}
+                          onCheckedChange={(checked) => updateBusinessHours(day, 'closed', !checked)}
+                        />
+                        {!daySettings.closed && (
+                          <>
+                            <Input
+                              type="time"
+                              value={daySettings.open}
+                              onChange={(e) => updateBusinessHours(day, 'open', e.target.value)}
+                              className="w-32"
+                            />
+                            <span className="text-sm text-gray-500">to</span>
+                            <Input
+                              type="time"
+                              value={daySettings.close}
+                              onChange={(e) => updateBusinessHours(day, 'close', e.target.value)}
+                              className="w-32"
+                            />
+                          </>
+                        )}
+                        {daySettings.closed && (
+                          <span className="text-sm text-gray-500">Closed</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={saveBusinessSettings} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Business Settings'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Profile Settings */}
         <TabsContent value="profile" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Profile Information</CardTitle>
+              <CardTitle className="flex items-center space-x-2">
+                <User className="h-5 w-5" />
+                <span>User Profile</span>
+              </CardTitle>
               <CardDescription>
-                Update your personal information and profile picture
+                Manage your personal information
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Profile Picture */}
-              <div className="flex items-center space-x-4">
-                <Avatar className="h-24 w-24">
-                  <AvatarImage src={settings.profile.profilePicture} />
-                  <AvatarFallback className="text-lg">
-                    {settings.profile.name.charAt(0) || 'A'}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="space-y-2">
-                  <Label htmlFor="profile-picture" className="cursor-pointer">
-                    <div className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">
-                      <Camera className="h-4 w-4" />
-                      <span>Change Picture</span>
-                    </div>
-                  </Label>
-                  <input
-                    id="profile-picture"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleProfilePictureUpload}
-                    disabled={uploading}
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="userName">Name</Label>
+                  <Input
+                    id="userName"
+                    value={userProfile.name}
+                    onChange={(e) => setUserProfile({...userProfile, name: e.target.value})}
+                    placeholder="Enter your name"
                   />
-                  {settings.profile.profilePicture && (
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-4 w-4 mr-2" />
-                          Preview
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl">
-                        <DialogHeader>
-                          <DialogTitle>Profile Picture</DialogTitle>
-                        </DialogHeader>
-                        <img 
-                          src={settings.profile.profilePicture} 
-                          alt="Profile" 
-                          className="w-full h-auto rounded-lg"
-                        />
-                      </DialogContent>
-                    </Dialog>
-                  )}
+                </div>
+                <div>
+                  <Label htmlFor="userEmail">Email</Label>
+                  <Input
+                    id="userEmail"
+                    type="email"
+                    value={userProfile.email}
+                    onChange={(e) => setUserProfile({...userProfile, email: e.target.value})}
+                    placeholder="Enter email address"
+                    disabled
+                  />
                 </div>
               </div>
 
-              {/* Profile Form */}
-              <Form {...profileForm}>
-                <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4">
-                  <FormField
-                    control={profileForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Full Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter your full name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="userPhone">Phone</Label>
+                  <Input
+                    id="userPhone"
+                    value={userProfile.phone}
+                    onChange={(e) => setUserProfile({...userProfile, phone: e.target.value})}
+                    placeholder="Enter phone number"
                   />
-
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input value={user?.email || ''} disabled />
-                    </FormControl>
-                    <FormDescription>
-                      Email cannot be changed here. Contact support if needed.
-                    </FormDescription>
-                  </FormItem>
-
-                  <FormField
-                    control={profileForm.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone Number</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter your phone number" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                </div>
+                <div>
+                  <Label htmlFor="userRole">Role</Label>
+                  <Input
+                    id="userRole"
+                    value={userProfile.role}
+                    disabled
+                    className="bg-gray-50"
                   />
+                </div>
+              </div>
 
-                  <FormField
-                    control={profileForm.control}
-                    name="address"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Address</FormLabel>
-                        <FormControl>
-                          <Textarea placeholder="Enter your address" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={profileForm.control}
-                    name="bio"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Bio</FormLabel>
-                        <FormControl>
-                          <Textarea placeholder="Tell us about yourself" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <Button type="submit" className="w-full">
-                    <Save className="h-4 w-4 mr-2" />
-                    Save Profile
-                  </Button>
-                </form>
-              </Form>
+              <div className="flex justify-end">
+                <Button disabled>
+                  Profile updates coming soon
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Store Tab */}
-        <TabsContent value="store" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Store Information</CardTitle>
-              <CardDescription>
-                Manage your store details and branding
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Store Logo */}
-              <div className="space-y-4">
-                <Label>Store Logo</Label>
-                <div className="flex items-center space-x-4">
-                  {settings.store.storeLogo && (
-                    <img 
-                      src={settings.store.storeLogo} 
-                      alt="Store Logo" 
-                      className="h-20 w-20 object-cover rounded-lg border"
-                    />
-                  )}
-                  <div className="space-y-2">
-                    <Label htmlFor="store-logo" className="cursor-pointer">
-                      <div className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700">
-                        <Upload className="h-4 w-4" />
-                        <span>Upload Logo</span>
-                      </div>
-                    </Label>
-                    <input
-                      id="store-logo"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleStoreLogoUpload}
-                      disabled={uploading}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Store Form */}
-              <Form {...storeForm}>
-                <form onSubmit={storeForm.handleSubmit(onStoreSubmit)} className="space-y-4">
-                  <FormField
-                    control={storeForm.control}
-                    name="storeName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Store Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter store name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={storeForm.control}
-                    name="storeAddress"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Store Address</FormLabel>
-                        <FormControl>
-                          <Textarea placeholder="Enter store address" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={storeForm.control}
-                      name="gstin"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>GSTIN</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Enter GSTIN" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={storeForm.control}
-                      name="pan"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>PAN</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Enter PAN" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <FormField
-                    control={storeForm.control}
-                    name="openingHours"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Opening Hours</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g., Mon-Sat: 9AM-7PM" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <Button type="submit" className="w-full">
-                    <Save className="h-4 w-4 mr-2" />
-                    Save Store Info
-                  </Button>
-                </form>
-              </Form>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Notifications Tab */}
+        {/* Notification Settings */}
         <TabsContent value="notifications" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Notification Preferences</CardTitle>
+              <CardTitle className="flex items-center space-x-2">
+                <Bell className="h-5 w-5" />
+                <span>Notification Preferences</span>
+              </CardTitle>
               <CardDescription>
-                Choose how you want to be notified about important events
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Email Alerts</h3>
-                
-                <div className="space-y-3">
-                  {Object.entries(settings.notifications.emailAlerts).map(([key, value]) => (
-                    <div key={key} className="flex items-center justify-between">
-                      <Label htmlFor={key} className="capitalize">
-                        {key.replace(/([A-Z])/g, ' $1').toLowerCase()}
-                      </Label>
-                      <Switch
-                        id={key}
-                        checked={value}
-                        onCheckedChange={(checked) => handleNotificationChange('emailAlerts', checked, key)}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Other Preferences</h3>
-                
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="smsAlerts">SMS Alerts</Label>
-                  <Switch
-                    id="smsAlerts"
-                    checked={settings.notifications.smsAlerts}
-                    onCheckedChange={(checked) => handleNotificationChange('smsAlerts', checked)}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="dailySummary">Daily Summary Email</Label>
-                  <Switch
-                    id="dailySummary"
-                    checked={settings.notifications.dailySummary}
-                    onCheckedChange={(checked) => handleNotificationChange('dailySummary', checked)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Appearance Tab */}
-        <TabsContent value="appearance" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Appearance Settings</CardTitle>
-              <CardDescription>
-                Customize the look and feel of your application
+                Configure how you want to receive notifications
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="theme">Theme</Label>
-                  <Select
-                    value={settings.appearance.theme}
-                    onValueChange={(value) => handleAppearanceChange('theme', value)}
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="light">Light</SelectItem>
-                      <SelectItem value="dark">Dark</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="fontPreference">Font</Label>
-                  <Select
-                    value={settings.appearance.fontPreference}
-                    onValueChange={(value) => handleAppearanceChange('fontPreference', value)}
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Inter">Inter</SelectItem>
-                      <SelectItem value="Roboto">Roboto</SelectItem>
-                      <SelectItem value="Open Sans">Open Sans</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="compactMode">Compact Mode</Label>
+                  <div>
+                    <h4 className="font-medium">Email Notifications</h4>
+                    <p className="text-sm text-gray-600">Receive notifications via email</p>
+                  </div>
                   <Switch
-                    id="compactMode"
-                    checked={settings.appearance.compactMode}
-                    onCheckedChange={(checked) => handleAppearanceChange('compactMode', checked)}
+                    checked={notificationSettings.emailNotifications}
+                    onCheckedChange={(checked) => setNotificationSettings({...notificationSettings, emailNotifications: checked})}
                   />
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="enableAnimations">Enable Animations</Label>
+                  <div>
+                    <h4 className="font-medium">SMS Notifications</h4>
+                    <p className="text-sm text-gray-600">Receive notifications via SMS</p>
+                  </div>
                   <Switch
-                    id="enableAnimations"
-                    checked={settings.appearance.enableAnimations}
-                    onCheckedChange={(checked) => handleAppearanceChange('enableAnimations', checked)}
+                    checked={notificationSettings.smsNotifications}
+                    onCheckedChange={(checked) => setNotificationSettings({...notificationSettings, smsNotifications: checked})}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium">Order Updates</h4>
+                    <p className="text-sm text-gray-600">Get notified about order status changes</p>
+                  </div>
+                  <Switch
+                    checked={notificationSettings.orderUpdates}
+                    onCheckedChange={(checked) => setNotificationSettings({...notificationSettings, orderUpdates: checked})}
                   />
                 </div>
 
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="language">Language</Label>
-                  <Select
-                    value={settings.appearance.language}
-                    onValueChange={(value) => handleAppearanceChange('language', value)}
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="en">English</SelectItem>
-                      <SelectItem value="hi">Hindi</SelectItem>
-                      <SelectItem value="ta">Tamil</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div>
+                    <h4 className="font-medium">Appointment Reminders</h4>
+                    <p className="text-sm text-gray-600">Receive reminders for upcoming appointments</p>
+                  </div>
+                  <Switch
+                    checked={notificationSettings.appointmentReminders}
+                    onCheckedChange={(checked) => setNotificationSettings({...notificationSettings, appointmentReminders: checked})}
+                  />
                 </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium">Low Stock Alerts</h4>
+                    <p className="text-sm text-gray-600">Get alerted when inventory is running low</p>
+                  </div>
+                  <Switch
+                    checked={notificationSettings.lowStockAlerts}
+                    onCheckedChange={(checked) => setNotificationSettings({...notificationSettings, lowStockAlerts: checked})}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium">Payment Reminders</h4>
+                    <p className="text-sm text-gray-600">Send reminders for pending payments</p>
+                  </div>
+                  <Switch
+                    checked={notificationSettings.paymentReminders}
+                    onCheckedChange={(checked) => setNotificationSettings({...notificationSettings, paymentReminders: checked})}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={saveNotificationSettings} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Notification Settings'}
+                </Button>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Security Tab */}
-        <TabsContent value="security" className="space-y-6">
+        {/* Advanced Settings */}
+        <TabsContent value="advanced" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Security Settings</CardTitle>
+              <CardTitle className="flex items-center space-x-2">
+                <Database className="h-5 w-5" />
+                <span>Advanced Settings</span>
+              </CardTitle>
               <CardDescription>
-                Manage your account security and privacy
+                Advanced configuration options
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Form {...securityForm}>
-                <form onSubmit={securityForm.handleSubmit(onSecuritySubmit)} className="space-y-4">
-                  <FormField
-                    control={securityForm.control}
-                    name="currentPassword"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Current Password</FormLabel>
-                        <FormControl>
-                          <Input type="password" placeholder="Enter current password" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+            <CardContent className="space-y-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2">
+                  <Shield className="h-5 w-5 text-yellow-600" />
+                  <h4 className="font-medium text-yellow-800">Data Management</h4>
+                </div>
+                <p className="text-sm text-yellow-700 mt-2">
+                  Advanced data management features are coming soon. This will include data export, backup, and restore functionality.
+                </p>
+              </div>
 
-                  <FormField
-                    control={securityForm.control}
-                    name="newPassword"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>New Password</FormLabel>
-                        <FormControl>
-                          <Input type="password" placeholder="Enter new password" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={securityForm.control}
-                    name="confirmPassword"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Confirm New Password</FormLabel>
-                        <FormControl>
-                          <Input type="password" placeholder="Confirm new password" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <Button type="submit" className="w-full">
-                    <Save className="h-4 w-4 mr-2" />
-                    Update Password
-                  </Button>
-                </form>
-              </Form>
+              <div className="space-y-3">
+                <Button variant="outline" disabled>
+                  Export Data
+                </Button>
+                <Button variant="outline" disabled>
+                  Backup Settings
+                </Button>
+                <Button variant="outline" disabled>
+                  Reset to Defaults
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

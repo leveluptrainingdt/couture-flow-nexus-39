@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -7,29 +8,33 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Scissors, Clock, CheckCircle, AlertTriangle, Upload, Image } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Plus, Scissors, Clock, CheckCircle, Search, Edit, Trash2, Phone, MessageCircle, Calendar } from 'lucide-react';
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
+import LoadingSpinner from '@/components/LoadingSpinner';
+import ContactActions from '@/components/ContactActions';
 
 interface Alteration {
   id: string;
   customerName: string;
   customerPhone: string;
-  itemType: string;
+  customerEmail?: string;
+  garmentType: string;
   alterationType: string;
   description: string;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'not-started' | 'in-progress' | 'completed' | 'delivered';
-  assignedStaff?: string;
-  estimatedCompletion: string;
-  actualCompletion?: string;
-  beforeImages: string[];
-  afterImages: string[];
-  cost: number;
+  urgency: 'normal' | 'urgent' | 'rush';
+  status: 'received' | 'in-progress' | 'completed' | 'delivered';
+  estimatedCost: number;
+  actualCost?: number;
+  dueDate: string;
   notes?: string;
+  measurements?: any;
+  beforeImages?: string[];
+  afterImages?: string[];
   createdAt: any;
-  updatedAt: any;
 }
 
 const Alterations = () => {
@@ -38,54 +43,44 @@ const Alterations = () => {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAlteration, setEditingAlteration] = useState<Alteration | null>(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const [formData, setFormData] = useState({
     customerName: '',
     customerPhone: '',
-    itemType: '',
+    customerEmail: '',
+    garmentType: '',
     alterationType: '',
     description: '',
-    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
-    status: 'not-started' as 'not-started' | 'in-progress' | 'completed' | 'delivered',
-    assignedStaff: '',
-    estimatedCompletion: '',
-    cost: 0,
+    urgency: 'normal',
+    estimatedCost: '',
+    dueDate: '',
     notes: ''
   });
 
-  const alterationTypes = [
-    'Hemming',
-    'Taking In',
-    'Letting Out',
-    'Sleeve Adjustment',
-    'Shoulder Adjustment',
-    'Length Adjustment',
-    'Zipper Repair',
-    'Button Replacement',
-    'Patch Work',
-    'Complete Restyling',
-    'Other'
+  const garmentTypes = [
+    'Dress', 'Shirt', 'Pants', 'Skirt', 'Jacket', 'Blouse', 
+    'Suit', 'Traditional Wear', 'Wedding Dress', 'Other'
   ];
 
-  const itemTypes = [
-    'Dress',
-    'Blouse',
-    'Saree',
-    'Lehenga',
-    'Kurta',
-    'Pants',
-    'Skirt',
-    'Jacket',
-    'Other'
+  const alterationTypes = [
+    'Hemming', 'Taking In', 'Letting Out', 'Shortening Sleeves',
+    'Lengthening', 'Zipper Replacement', 'Button Replacement',
+    'Patching', 'Resizing', 'Style Change', 'Repair', 'Other'
   ];
 
   useEffect(() => {
+    if (!userData) {
+      setLoading(false);
+      return;
+    }
     fetchAlterations();
-  }, []);
+  }, [userData]);
 
   const fetchAlterations = async () => {
     try {
+      setLoading(true);
       const alterationsQuery = query(
         collection(db, 'alterations'),
         orderBy('createdAt', 'desc')
@@ -93,12 +88,10 @@ const Alterations = () => {
       const alterationsSnapshot = await getDocs(alterationsQuery);
       const alterationsData = alterationsSnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data(),
-        beforeImages: doc.data().beforeImages || [],
-        afterImages: doc.data().afterImages || []
+        ...doc.data()
       })) as Alteration[];
       
-      setAlterations(alterationsData);
+      setAlterations(alterationsData || []);
     } catch (error) {
       console.error('Error fetching alterations:', error);
       toast({
@@ -106,6 +99,7 @@ const Alterations = () => {
         description: "Failed to fetch alterations",
         variant: "destructive",
       });
+      setAlterations([]);
     } finally {
       setLoading(false);
     }
@@ -115,10 +109,17 @@ const Alterations = () => {
     e.preventDefault();
     try {
       const alterationData = {
-        ...formData,
-        beforeImages: [],
-        afterImages: [],
-        updatedAt: serverTimestamp(),
+        customerName: formData.customerName,
+        customerPhone: formData.customerPhone,
+        customerEmail: formData.customerEmail || undefined,
+        garmentType: formData.garmentType,
+        alterationType: formData.alterationType,
+        description: formData.description,
+        urgency: formData.urgency as 'normal' | 'urgent' | 'rush',
+        estimatedCost: parseFloat(formData.estimatedCost) || 0,
+        dueDate: formData.dueDate,
+        notes: formData.notes || undefined,
+        status: 'received' as const,
         ...(editingAlteration ? {} : { createdAt: serverTimestamp() })
       };
 
@@ -132,7 +133,7 @@ const Alterations = () => {
         await addDoc(collection(db, 'alterations'), alterationData);
         toast({
           title: "Success",
-          description: "Alteration added successfully",
+          description: "Alteration request added successfully",
         });
       }
 
@@ -154,14 +155,13 @@ const Alterations = () => {
     setFormData({
       customerName: '',
       customerPhone: '',
-      itemType: '',
+      customerEmail: '',
+      garmentType: '',
       alterationType: '',
       description: '',
-      priority: 'medium',
-      status: 'not-started',
-      assignedStaff: '',
-      estimatedCompletion: '',
-      cost: 0,
+      urgency: 'normal',
+      estimatedCost: '',
+      dueDate: '',
       notes: ''
     });
   };
@@ -169,168 +169,114 @@ const Alterations = () => {
   const handleEdit = (alteration: Alteration) => {
     setEditingAlteration(alteration);
     setFormData({
-      customerName: alteration.customerName,
-      customerPhone: alteration.customerPhone,
-      itemType: alteration.itemType,
-      alterationType: alteration.alterationType,
-      description: alteration.description,
-      priority: alteration.priority,
-      status: alteration.status,
-      assignedStaff: alteration.assignedStaff || '',
-      estimatedCompletion: alteration.estimatedCompletion,
-      cost: alteration.cost,
+      customerName: alteration.customerName || '',
+      customerPhone: alteration.customerPhone || '',
+      customerEmail: alteration.customerEmail || '',
+      garmentType: alteration.garmentType || '',
+      alterationType: alteration.alterationType || '',
+      description: alteration.description || '',
+      urgency: alteration.urgency || 'normal',
+      estimatedCost: alteration.estimatedCost?.toString() || '',
+      dueDate: alteration.dueDate || '',
       notes: alteration.notes || ''
     });
     setIsDialogOpen(true);
   };
 
-  const updateStatus = async (alterationId: string, newStatus: Alteration['status']) => {
-    try {
-      const updateData: any = {
-        status: newStatus,
-        updatedAt: serverTimestamp()
-      };
-
-      if (newStatus === 'completed') {
-        updateData.actualCompletion = new Date().toISOString().split('T')[0];
+  const handleDelete = async (alterationId: string) => {
+    if (window.confirm('Are you sure you want to delete this alteration request?')) {
+      try {
+        await deleteDoc(doc(db, 'alterations', alterationId));
+        toast({
+          title: "Success",
+          description: "Alteration deleted successfully",
+        });
+        fetchAlterations();
+      } catch (error) {
+        console.error('Error deleting alteration:', error);
+        toast({
+          title: "Error",
+          description: "Failed to delete alteration",
+          variant: "destructive",
+        });
       }
+    }
+  };
 
-      await updateDoc(doc(db, 'alterations', alterationId), updateData);
+  const updateStatus = async (alterationId: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(db, 'alterations', alterationId), {
+        status: newStatus
+      });
+      
       toast({
         title: "Success",
-        description: "Status updated successfully",
+        description: `Alteration marked as ${newStatus}`,
       });
       fetchAlterations();
     } catch (error) {
-      console.error('Error updating status:', error);
+      console.error('Error updating alteration status:', error);
       toast({
         title: "Error",
-        description: "Failed to update status",
+        description: "Failed to update alteration status",
         variant: "destructive",
       });
     }
   };
 
-  const uploadImage = async (file: File, alterationId: string, imageType: 'before' | 'after') => {
-    setUploadingImage(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', 'swetha');
-
-      const response = await fetch('https://api.cloudinary.com/v1_1/dvmrhs2ek/image/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await response.json();
-      
-      if (data.secure_url) {
-        const alteration = alterations.find(alt => alt.id === alterationId);
-        if (alteration) {
-          const updatedImages = imageType === 'before' 
-            ? [...alteration.beforeImages, data.secure_url]
-            : [...alteration.afterImages, data.secure_url];
-
-          await updateDoc(doc(db, 'alterations', alterationId), {
-            [imageType === 'before' ? 'beforeImages' : 'afterImages']: updatedImages,
-            updatedAt: serverTimestamp()
-          });
-
-          toast({
-            title: "Success",
-            description: `${imageType === 'before' ? 'Before' : 'After'} image uploaded successfully`,
-          });
-          fetchAlterations();
-        }
-      }
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      toast({
-        title: "Error",
-        description: "Failed to upload image",
-        variant: "destructive",
-      });
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
-  const getStatusColor = (status: Alteration['status']) => {
-    switch (status) {
-      case 'not-started': return 'bg-gray-100 text-gray-700 border-gray-200';
-      case 'in-progress': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'completed': return 'bg-green-100 text-green-700 border-green-200';
-      case 'delivered': return 'bg-purple-100 text-purple-700 border-purple-200';
-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
-    }
-  };
-
-  const getPriorityColor = (priority: Alteration['priority']) => {
-    switch (priority) {
-      case 'low': return 'bg-green-100 text-green-700';
-      case 'medium': return 'bg-yellow-100 text-yellow-700';
-      case 'high': return 'bg-orange-100 text-orange-700';
-      case 'urgent': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Alterations</h1>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[...Array(6)].map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader>
-                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="h-3 bg-gray-200 rounded"></div>
-                  <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
+  if (!userData) {
+    return <LoadingSpinner type="page" />;
   }
 
-  const activeAlterations = alterations.filter(alt => alt.status === 'in-progress');
-  const completedAlterations = alterations.filter(alt => alt.status === 'completed');
-  const urgentAlterations = alterations.filter(alt => alt.priority === 'urgent');
+  if (loading) {
+    return <LoadingSpinner type="page" />;
+  }
+
+  const filteredAlterations = alterations.filter(alteration => {
+    if (!alteration) return false;
+    
+    const matchesSearch = (
+      (alteration.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (alteration.garmentType || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (alteration.alterationType || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    
+    const matchesStatus = statusFilter === 'all' || alteration.status === statusFilter;
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  // Safe calculations
+  const totalAlterations = alterations.length;
+  const inProgressAlterations = alterations.filter(alt => alt?.status === 'in-progress').length;
+  const completedAlterations = alterations.filter(alt => alt?.status === 'completed').length;
+  const rushJobs = alterations.filter(alt => alt?.urgency === 'rush' && alt?.status !== 'delivered').length;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Alterations & Rework</h1>
-          <p className="text-gray-600">Track alteration projects and deadlines</p>
+          <h1 className="text-3xl font-bold text-gray-900">Alterations</h1>
+          <p className="text-gray-600">Manage alteration requests and repairs</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button 
-              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              className="bg-gradient-to-r from-blue-600 to-purple-600"
               onClick={() => {
                 setEditingAlteration(null);
                 resetForm();
               }}
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add Alteration
+              New Alteration
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {editingAlteration ? 'Edit Alteration' : 'Add New Alteration'}
+                {editingAlteration ? 'Edit Alteration' : 'New Alteration Request'}
               </DialogTitle>
               <DialogDescription>
                 Fill in the alteration details below.
@@ -344,52 +290,59 @@ const Alterations = () => {
                     id="customerName"
                     value={formData.customerName}
                     onChange={(e) => setFormData({...formData, customerName: e.target.value})}
-                    placeholder="Customer name"
+                    placeholder="Enter customer name"
                     required
                   />
                 </div>
                 <div>
-                  <Label htmlFor="customerPhone">Phone</Label>
+                  <Label htmlFor="customerPhone">Phone Number</Label>
                   <Input
                     id="customerPhone"
                     value={formData.customerPhone}
                     onChange={(e) => setFormData({...formData, customerPhone: e.target.value})}
-                    placeholder="Phone number"
+                    placeholder="Enter phone number"
                     required
                   />
                 </div>
               </div>
-              
+
+              <div>
+                <Label htmlFor="customerEmail">Email (Optional)</Label>
+                <Input
+                  id="customerEmail"
+                  type="email"
+                  value={formData.customerEmail}
+                  onChange={(e) => setFormData({...formData, customerEmail: e.target.value})}
+                  placeholder="Enter email address"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="itemType">Item Type</Label>
-                  <select
-                    id="itemType"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.itemType}
-                    onChange={(e) => setFormData({...formData, itemType: e.target.value})}
-                    required
-                  >
-                    <option value="">Select item</option>
-                    {itemTypes.map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
+                  <Label htmlFor="garmentType">Garment Type</Label>
+                  <Select value={formData.garmentType} onValueChange={(value) => setFormData({...formData, garmentType: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select garment type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {garmentTypes.map(type => (
+                        <SelectItem key={type} value={type}>{type}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label htmlFor="alterationType">Alteration Type</Label>
-                  <select
-                    id="alterationType"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.alterationType}
-                    onChange={(e) => setFormData({...formData, alterationType: e.target.value})}
-                    required
-                  >
-                    <option value="">Select alteration</option>
-                    {alterationTypes.map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
+                  <Select value={formData.alterationType} onValueChange={(value) => setFormData({...formData, alterationType: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select alteration type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {alterationTypes.map(type => (
+                        <SelectItem key={type} value={type}>{type}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -399,7 +352,7 @@ const Alterations = () => {
                   id="description"
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  placeholder="Detailed description of the alteration needed"
+                  placeholder="Describe the alteration needed"
                   rows={3}
                   required
                 />
@@ -407,62 +360,46 @@ const Alterations = () => {
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="priority">Priority</Label>
-                  <select
-                    id="priority"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.priority}
-                    onChange={(e) => setFormData({...formData, priority: e.target.value as 'low' | 'medium' | 'high' | 'urgent'})}
-                    required
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
-                  </select>
+                  <Label htmlFor="urgency">Urgency</Label>
+                  <Select value={formData.urgency} onValueChange={(value) => setFormData({...formData, urgency: value})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select urgency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                      <SelectItem value="rush">Rush</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
-                  <Label htmlFor="status">Status</Label>
-                  <select
-                    id="status"
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value as 'not-started' | 'in-progress' | 'completed' | 'delivered'})}
-                    required
-                  >
-                    <option value="not-started">Not Started</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                    <option value="delivered">Delivered</option>
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="cost">Cost (₹)</Label>
+                  <Label htmlFor="estimatedCost">Estimated Cost (₹)</Label>
                   <Input
-                    id="cost"
+                    id="estimatedCost"
                     type="number"
                     min="0"
-                    value={formData.cost}
-                    onChange={(e) => setFormData({...formData, cost: parseFloat(e.target.value) || 0})}
-                    placeholder="0"
+                    step="0.01"
+                    value={formData.estimatedCost}
+                    onChange={(e) => setFormData({...formData, estimatedCost: e.target.value})}
+                    placeholder="Enter cost"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="dueDate">Due Date</Label>
+                  <Input
+                    id="dueDate"
+                    type="date"
+                    value={formData.dueDate}
+                    onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
+                    min={format(new Date(), 'yyyy-MM-dd')}
                     required
                   />
                 </div>
               </div>
 
               <div>
-                <Label htmlFor="estimatedCompletion">Estimated Completion</Label>
-                <Input
-                  id="estimatedCompletion"
-                  type="date"
-                  value={formData.estimatedCompletion}
-                  onChange={(e) => setFormData({...formData, estimatedCompletion: e.target.value})}
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="notes">Additional Notes</Label>
+                <Label htmlFor="notes">Notes (Optional)</Label>
                 <Textarea
                   id="notes"
                   value={formData.notes}
@@ -476,7 +413,7 @@ const Alterations = () => {
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" className="bg-gradient-to-r from-purple-600 to-blue-600">
+                <Button type="submit" className="bg-gradient-to-r from-blue-600 to-purple-600">
                   {editingAlteration ? 'Update Alteration' : 'Add Alteration'}
                 </Button>
               </div>
@@ -489,12 +426,12 @@ const Alterations = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Projects</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600">Total Alterations</CardTitle>
             <Scissors className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{alterations.length}</div>
-            <p className="text-xs text-gray-500">All alteration projects</p>
+            <div className="text-2xl font-bold text-gray-900">{totalAlterations}</div>
+            <p className="text-xs text-gray-500">All requests</p>
           </CardContent>
         </Card>
         
@@ -504,8 +441,8 @@ const Alterations = () => {
             <Clock className="h-5 w-5 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{activeAlterations.length}</div>
-            <p className="text-xs text-gray-500">Currently working on</p>
+            <div className="text-2xl font-bold text-gray-900">{inProgressAlterations}</div>
+            <p className="text-xs text-gray-500">Currently working</p>
           </CardContent>
         </Card>
 
@@ -515,190 +452,143 @@ const Alterations = () => {
             <CheckCircle className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{completedAlterations.length}</div>
-            <p className="text-xs text-gray-500">Successfully completed</p>
+            <div className="text-2xl font-bold text-gray-900">{completedAlterations}</div>
+            <p className="text-xs text-gray-500">Ready for pickup</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Urgent</CardTitle>
-            <AlertTriangle className="h-5 w-5 text-red-600" />
+            <CardTitle className="text-sm font-medium text-gray-600">Rush Jobs</CardTitle>
+            <Calendar className="h-5 w-5 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{urgentAlterations.length}</div>
-            <p className="text-xs text-gray-500">Need immediate attention</p>
+            <div className="text-2xl font-bold text-gray-900">{rushJobs}</div>
+            <p className="text-xs text-gray-500">Priority items</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Alterations Grid */}
-      {alterations.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {alterations.map((alteration) => (
-            <Card key={alteration.id} className="hover:shadow-lg transition-all duration-300 border-0 shadow-md">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg">{alteration.customerName}</CardTitle>
-                    <CardDescription>{alteration.itemType} - {alteration.alterationType}</CardDescription>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <Badge className={getStatusColor(alteration.status)} variant="outline">
-                      {alteration.status.replace('-', ' ')}
-                    </Badge>
-                    <Badge className={getPriorityColor(alteration.priority)} variant="outline">
-                      {alteration.priority}
-                    </Badge>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-gray-600 line-clamp-2">{alteration.description}</p>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Cost:</span>
-                    <span className="font-medium">₹{alteration.cost}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Due Date:</span>
-                    <span className="font-medium">{alteration.estimatedCompletion}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Phone:</span>
-                    <span className="font-medium">{alteration.customerPhone}</span>
-                  </div>
-                </div>
-
-                {/* Image Upload Section */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-600">Images:</span>
-                    <div className="flex space-x-1">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) uploadImage(file, alteration.id, 'before');
-                        }}
-                        style={{ display: 'none' }}
-                        id={`before-${alteration.id}`}
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-xs"
-                        onClick={() => document.getElementById(`before-${alteration.id}`)?.click()}
-                        disabled={uploadingImage}
-                      >
-                        <Upload className="h-3 w-3 mr-1" />
-                        Before
-                      </Button>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) uploadImage(file, alteration.id, 'after');
-                        }}
-                        style={{ display: 'none' }}
-                        id={`after-${alteration.id}`}
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-xs"
-                        onClick={() => document.getElementById(`after-${alteration.id}`)?.click()}
-                        disabled={uploadingImage}
-                      >
-                        <Upload className="h-3 w-3 mr-1" />
-                        After
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  {(alteration.beforeImages.length > 0 || alteration.afterImages.length > 0) && (
-                    <div className="grid grid-cols-4 gap-1">
-                      {alteration.beforeImages.map((img, idx) => (
-                        <div key={`before-${idx}`} className="relative">
-                          <img src={img} alt="Before" className="w-full h-12 object-cover rounded border" />
-                          <span className="absolute top-0 left-0 bg-blue-500 text-white text-xs px-1 rounded">B</span>
-                        </div>
-                      ))}
-                      {alteration.afterImages.map((img, idx) => (
-                        <div key={`after-${idx}`} className="relative">
-                          <img src={img} alt="After" className="w-full h-12 object-cover rounded border" />
-                          <span className="absolute top-0 left-0 bg-green-500 text-white text-xs px-1 rounded">A</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Quick Status Updates */}
-                <div className="flex flex-wrap gap-2">
-                  {alteration.status === 'not-started' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-blue-600 hover:bg-blue-50"
-                      onClick={() => updateStatus(alteration.id, 'in-progress')}
-                    >
-                      Start Work
-                    </Button>
-                  )}
-                  {alteration.status === 'in-progress' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-green-600 hover:bg-green-50"
-                      onClick={() => updateStatus(alteration.id, 'completed')}
-                    >
-                      Mark Complete
-                    </Button>
-                  )}
-                  {alteration.status === 'completed' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-purple-600 hover:bg-purple-50"
-                      onClick={() => updateStatus(alteration.id, 'delivered')}
-                    >
-                      Mark Delivered
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleEdit(alteration)}
-                  >
-                    Edit
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Search alterations..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
         </div>
-      ) : (
-        <Card className="border-0 shadow-sm">
-          <CardContent className="py-12 text-center">
-            <Scissors className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No alterations found</h3>
-            <p className="text-gray-600 mb-4">
-              Start by adding your first alteration project.
-            </p>
-            <Button 
-              className="bg-gradient-to-r from-purple-600 to-blue-600"
-              onClick={() => setIsDialogOpen(true)}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add First Alteration
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="received">Received</SelectItem>
+            <SelectItem value="in-progress">In Progress</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="delivered">Delivered</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Alterations List */}
+      <Card className="border-0 shadow-md">
+        <CardHeader>
+          <CardTitle>Alteration Requests</CardTitle>
+          <CardDescription>Manage all alteration requests and repairs</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {filteredAlterations.length > 0 ? (
+            <div className="space-y-4">
+              {filteredAlterations.map((alteration) => (
+                <div key={alteration?.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-4">
+                      <div>
+                        <h3 className="font-semibold">{alteration?.customerName || 'Unknown Customer'}</h3>
+                        <p className="text-sm text-gray-600">
+                          {alteration?.garmentType || 'N/A'} • {alteration?.alterationType || 'N/A'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Due: {alteration?.dueDate ? format(new Date(alteration.dueDate), 'PPP') : 'No date'} • ₹{(alteration?.estimatedCost || 0).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="flex space-x-1">
+                        <Badge 
+                          variant={
+                            alteration?.status === 'delivered' ? 'default' : 
+                            alteration?.status === 'completed' ? 'secondary' : 
+                            alteration?.status === 'in-progress' ? 'outline' : 'outline'
+                          }
+                        >
+                          {alteration?.status || 'Unknown'}
+                        </Badge>
+                        {alteration?.urgency === 'rush' && (
+                          <Badge variant="destructive">Rush</Badge>
+                        )}
+                        {alteration?.urgency === 'urgent' && (
+                          <Badge variant="secondary">Urgent</Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <ContactActions 
+                      phone={alteration?.customerPhone}
+                      message={`Hi ${alteration?.customerName}, your ${alteration?.garmentType} alteration is ${alteration?.status}. Due date: ${alteration?.dueDate ? format(new Date(alteration.dueDate), 'PPP') : 'TBD'}.`}
+                    />
+                    <Select 
+                      value={alteration?.status} 
+                      onValueChange={(value) => updateStatus(alteration?.id, value)}
+                    >
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="received">Received</SelectItem>
+                        <SelectItem value="in-progress">In Progress</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="delivered">Delivered</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" variant="outline" onClick={() => handleEdit(alteration)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => handleDelete(alteration?.id)}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <Scissors className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No alterations</h3>
+              <p className="text-gray-600 mb-6">
+                {searchTerm ? 'No alterations match your search.' : 'Add your first alteration request to get started.'}
+              </p>
+              {!searchTerm && (
+                <Button 
+                  className="bg-gradient-to-r from-blue-600 to-purple-600"
+                  onClick={() => setIsDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add First Alteration
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
