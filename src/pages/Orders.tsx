@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -373,9 +372,9 @@ const Orders = () => {
       {view === 'calendar' && (
         <OrderCalendar 
           orders={convertedOrders}
-          onOrderClick={(order) => {
-            const customOrder = safeOrders.find(o => o?.id === order.id);
-            if (customOrder) handleViewOrder(customOrder);
+          onDateSelect={(date, dayOrders) => {
+            // Handle date selection if needed
+            console.log('Selected date:', date, 'Orders:', dayOrders);
           }}
         />
       )}
@@ -448,7 +447,8 @@ const Orders = () => {
               setIsDetailsModalOpen(false);
               setSelectedOrder(null);
             }}
-            designImages={selectedOrder.designImages}
+            onWhatsAppClick={() => handleSendWhatsApp(selectedOrder)}
+            onRefresh={fetchOrders}
           />
           <WhatsAppMessageModal
             order={convertToOrder(selectedOrder)}

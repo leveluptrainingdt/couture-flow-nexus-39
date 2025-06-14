@@ -92,7 +92,7 @@ const Dashboard = () => {
   const statCards = [
     {
       title: 'Total Revenue',
-      value: `₹${stats.stats.totalRevenue.toLocaleString()}`,
+      value: `₹${stats.totalRevenue.toLocaleString()}`,
       icon: DollarSign,
       description: 'From delivered orders',
       color: 'text-green-600',
@@ -100,7 +100,7 @@ const Dashboard = () => {
     },
     {
       title: 'Total Orders',
-      value: stats.stats.totalOrders,
+      value: stats.totalOrders,
       icon: ShoppingCart,
       description: 'All time orders',
       color: 'text-blue-600',
@@ -108,7 +108,7 @@ const Dashboard = () => {
     },
     {
       title: 'Active Orders',
-      value: stats.stats.activeOrders,
+      value: stats.activeOrders,
       icon: Clock,
       description: 'In progress orders',
       color: 'text-orange-600',
@@ -116,7 +116,7 @@ const Dashboard = () => {
     },
     {
       title: 'Pending Orders',
-      value: stats.stats.pendingOrders,
+      value: stats.pendingOrders,
       icon: XCircle,
       description: 'Waiting to start',
       color: 'text-red-600',
@@ -124,7 +124,7 @@ const Dashboard = () => {
     },
     {
       title: 'Completed Orders',
-      value: stats.stats.completedOrders,
+      value: stats.completedOrders,
       icon: CheckCircle,
       description: 'Ready & delivered',
       color: 'text-purple-600',
@@ -132,7 +132,7 @@ const Dashboard = () => {
     },
     {
       title: 'Total Customers',
-      value: stats.stats.totalCustomers,
+      value: stats.totalCustomers,
       icon: Users,
       description: 'Registered customers',
       color: 'text-indigo-600',
