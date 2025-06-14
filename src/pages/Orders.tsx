@@ -997,68 +997,85 @@ const Orders = () => {
         <OrderCalendar 
           orders={orders.map(order => ({
             id: order.id,
-            orderId: order.orderId,
             orderNumber: order.orderId,
             customerName: order.customerName,
             itemType: order.dressType,
-            orderDate: order.createdAt?.toDate?.() || new Date(),
-            quantity: order.items.reduce((sum, item) => sum + item.qty, 0),
-            advanceAmount: order.advancePaid,
-            remainingAmount: order.balance,
-            deliveryDate: new Date(order.deliveryDate),
-            status: order.status
+            status: order.status,
+            orderDate: order.createdAt?.toDate?.()?.toISOString()?.split('T')[0] || new Date().toISOString().split('T')[0],
+            deliveryDate: new Date(order.deliveryDate).toISOString().split('T')[0],
+            totalAmount: order.totalAmount
           }))} 
           onDateSelect={(date, dayOrders) => {
             console.log('Selected date:', date, 'Orders:', dayOrders);
           }}
         />
       ) : currentView === 'grid' ? (
-        <Card className="border-0 shadow-lg">
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>Orders Overview</CardTitle>
-              {gridSelectedStatus && (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setGridSelectedStatus('')}
-                >
-                  ← Back to Overview
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <OrderGridView
-              orders={orders.map(order => ({
-                id: order.id,
-                orderId: order.orderId,
-                orderNumber: order.orderId,
-                customerName: order.customerName,
-                itemType: order.dressType,
-                orderDate: order.createdAt?.toDate?.() || new Date(),
-                quantity: order.items.reduce((sum, item) => sum + item.qty, 0),
-                advanceAmount: order.advancePaid,
-                remainingAmount: order.balance,
-                deliveryDate: new Date(order.deliveryDate),
-                status: order.status
-              }))}
-              onOrderClick={(order) => {
-                const customOrder = orders.find(o => o.orderId === order.orderId);
-                if (customOrder) {
-                  handleGridViewOrderClick(customOrder);
-                }
-              }}
-              onWhatsAppClick={(order) => {
-                const customOrder = orders.find(o => o.orderId === order.orderId);
-                if (customOrder) {
-                  openWhatsAppModal(customOrder);
-                }
-              }}
-              selectedStatus={gridSelectedStatus}
-            />
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          {/* Status Overview Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <Card 
+              className={`cursor-pointer transition-shadow hover:shadow-md ${gridSelectedStatus === 'all' ? 'ring-2 ring-purple-500' : ''}`}
+              onClick={() => setGridSelectedStatus('all')}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600">All Orders</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-900">{orders.length}</div>
+              </CardContent>
+            </Card>
+            {['Received', 'In Progress', 'Ready', 'Delivered', 'Cancelled'].map(status => (
+              <Card 
+                key={status}
+                className={`cursor-pointer transition-shadow hover:shadow-md ${gridSelectedStatus === status ? 'ring-2 ring-purple-500' : ''}`}
+                onClick={() => setGridSelectedStatus(status)}
+              >
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">{status}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {orders.filter(order => order.status === status).length}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle>Orders Grid</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OrderGridView
+                orders={orders.map(order => ({
+                  id: order.id,
+                  orderNumber: order.orderId,
+                  customerName: order.customerName,
+                  customerPhone: order.customerPhone || '',
+                  status: order.status,
+                  orderDate: order.createdAt?.toDate?.()?.toISOString()?.split('T')[0] || new Date().toISOString().split('T')[0],
+                  deliveryDate: new Date(order.deliveryDate).toISOString().split('T')[0],
+                  totalAmount: order.totalAmount,
+                  remainingAmount: order.balance
+                }))}
+                onOrderClick={(order) => {
+                  const customOrder = orders.find(o => o.orderId === order.orderNumber);
+                  if (customOrder) {
+                    handleGridViewOrderClick(customOrder);
+                  }
+                }}
+                onWhatsAppClick={(order) => {
+                  const customOrder = orders.find(o => o.orderId === order.orderNumber);
+                  if (customOrder) {
+                    openWhatsAppModal(customOrder);
+                  }
+                }}
+                selectedStatus={gridSelectedStatus}
+              />
+            </CardContent>
+          </Card>
+        </div>
       ) : (
         <>
           {/* Filters */}
@@ -1357,19 +1374,26 @@ const Orders = () => {
         }}
         order={selectedOrderForDetails ? {
           id: selectedOrderForDetails.id,
-          orderId: selectedOrderForDetails.orderId,
           orderNumber: selectedOrderForDetails.orderId,
           customerName: selectedOrderForDetails.customerName,
+          customerPhone: selectedOrderForDetails.customerPhone || '',
+          customerEmail: selectedOrderForDetails.customerEmail,
           itemType: selectedOrderForDetails.dressType,
-          orderDate: selectedOrderForDetails.createdAt?.toDate?.() || new Date(),
           quantity: selectedOrderForDetails.items.reduce((sum, item) => sum + item.qty, 0),
+          totalAmount: selectedOrderForDetails.totalAmount,
           advanceAmount: selectedOrderForDetails.advancePaid,
           remainingAmount: selectedOrderForDetails.balance,
-          deliveryDate: new Date(selectedOrderForDetails.deliveryDate),
-          status: selectedOrderForDetails.status
+          status: selectedOrderForDetails.status,
+          orderDate: selectedOrderForDetails.createdAt?.toDate?.()?.toISOString()?.split('T')[0] || new Date().toISOString().split('T')[0],
+          deliveryDate: new Date(selectedOrderForDetails.deliveryDate).toISOString().split('T')[0],
+          measurements: selectedOrderForDetails.measurements,
+          notes: selectedOrderForDetails.notes,
+          designImages: selectedOrderForDetails.designImages,
+          assignedStaff: selectedOrderForDetails.assignedStaff?.map(staff => staff.name),
+          requiredMaterials: selectedOrderForDetails.requiredMaterials
         } : null}
         onWhatsAppClick={(order) => {
-          const customOrder = orders.find(o => o.orderId === order.orderId);
+          const customOrder = orders.find(o => o.orderId === order.orderNumber);
           if (customOrder) {
             openWhatsAppModal(customOrder);
           }
@@ -1385,7 +1409,20 @@ const Orders = () => {
             setWhatsappModalOpen(false);
             setSelectedOrderForWhatsApp(null);
           }}
-          order={selectedOrderForWhatsApp}
+          order={selectedOrderForWhatsApp ? {
+            id: selectedOrderForWhatsApp.id,
+            orderNumber: selectedOrderForWhatsApp.orderId,
+            customerName: selectedOrderForWhatsApp.customerName,
+            customerPhone: selectedOrderForWhatsApp.customerPhone || '',
+            itemType: selectedOrderForWhatsApp.dressType,
+            quantity: selectedOrderForWhatsApp.items.reduce((sum, item) => sum + item.qty, 0),
+            totalAmount: selectedOrderForWhatsApp.totalAmount,
+            advanceAmount: selectedOrderForWhatsApp.advancePaid,
+            remainingAmount: selectedOrderForWhatsApp.balance,
+            status: selectedOrderForWhatsApp.status,
+            orderDate: selectedOrderForWhatsApp.createdAt?.toDate?.()?.toISOString()?.split('T')[0] || new Date().toISOString().split('T')[0],
+            deliveryDate: new Date(selectedOrderForWhatsApp.deliveryDate).toISOString().split('T')[0]
+          } : null}
         />
       )}
     </div>
