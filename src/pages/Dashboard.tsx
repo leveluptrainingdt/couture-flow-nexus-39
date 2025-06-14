@@ -59,10 +59,9 @@ interface Alert {
 const Dashboard = () => {
   const { userData } = useAuth();
   const navigate = useNavigate();
-  const stats = useRealTimeStats();
+  const { stats, loading, error } = useRealTimeStats();
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(false);
 
   // Redirect staff to staff dashboard
   useEffect(() => {
@@ -93,7 +92,7 @@ const Dashboard = () => {
   const statCards = [
     {
       title: 'Total Revenue',
-      value: `₹${stats.totalRevenue.toLocaleString()}`,
+      value: `₹${stats.stats.totalRevenue.toLocaleString()}`,
       icon: DollarSign,
       description: 'From delivered orders',
       color: 'text-green-600',
@@ -101,7 +100,7 @@ const Dashboard = () => {
     },
     {
       title: 'Total Orders',
-      value: stats.totalOrders,
+      value: stats.stats.totalOrders,
       icon: ShoppingCart,
       description: 'All time orders',
       color: 'text-blue-600',
@@ -109,7 +108,7 @@ const Dashboard = () => {
     },
     {
       title: 'Active Orders',
-      value: stats.activeOrders,
+      value: stats.stats.activeOrders,
       icon: Clock,
       description: 'In progress orders',
       color: 'text-orange-600',
@@ -117,7 +116,7 @@ const Dashboard = () => {
     },
     {
       title: 'Pending Orders',
-      value: stats.pendingOrders,
+      value: stats.stats.pendingOrders,
       icon: XCircle,
       description: 'Waiting to start',
       color: 'text-red-600',
@@ -125,7 +124,7 @@ const Dashboard = () => {
     },
     {
       title: 'Completed Orders',
-      value: stats.completedOrders,
+      value: stats.stats.completedOrders,
       icon: CheckCircle,
       description: 'Ready & delivered',
       color: 'text-purple-600',
@@ -133,7 +132,7 @@ const Dashboard = () => {
     },
     {
       title: 'Total Customers',
-      value: stats.totalCustomers,
+      value: stats.stats.totalCustomers,
       icon: Users,
       description: 'Registered customers',
       color: 'text-indigo-600',

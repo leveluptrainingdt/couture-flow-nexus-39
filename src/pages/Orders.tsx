@@ -64,7 +64,7 @@ interface Order {
   customerPhone: string;
   itemType: string;
   orderDate: any;
-  deliveryDate: Date;
+  deliveryDate: string;
   totalAmount: number;
   advanceAmount: number;
   remainingAmount: number;
@@ -87,12 +87,12 @@ const Orders = () => {
 
   // Safe data loading with error handling
   useEffect(() => {
-    if (!userData?.businessId) {
+    if (!userData) {
       setLoading(false);
       return;
     }
     fetchOrders();
-  }, [userData?.businessId]);
+  }, [userData]);
 
   const fetchOrders = async () => {
     try {
@@ -185,7 +185,7 @@ const Orders = () => {
         customerPhone: '',
         itemType: '',
         orderDate: new Date(),
-        deliveryDate: new Date(),
+        deliveryDate: '',
         totalAmount: 0,
         advanceAmount: 0,
         remainingAmount: 0,
@@ -201,7 +201,7 @@ const Orders = () => {
       customerPhone: customOrder.customerPhone || '',
       itemType: customOrder.dressType || '',
       orderDate: customOrder.createdAt || new Date(),
-      deliveryDate: new Date(customOrder.deliveryDate || Date.now()),
+      deliveryDate: customOrder.deliveryDate || '',
       totalAmount: customOrder.totalAmount || 0,
       advanceAmount: customOrder.advanceAmount || 0,
       remainingAmount: customOrder.balance || 0,

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -84,12 +83,12 @@ const Inventory = () => {
   const units = ['pieces', 'meters', 'yards', 'kg', 'grams', 'rolls', 'sets'];
 
   useEffect(() => {
-    if (!userData?.businessId) {
+    if (!userData) {
       setLoading(false);
       return;
     }
     fetchData();
-  }, [userData?.businessId]);
+  }, [userData]);
 
   const fetchData = async () => {
     try {
@@ -491,7 +490,7 @@ const Inventory = () => {
               <Button 
                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
                 onClick={() => {
-                  setEditingOrder(null);
+                  setEditingItem(null);
                   resetForm();
                 }}
               >
