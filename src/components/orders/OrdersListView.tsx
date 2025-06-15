@@ -1,0 +1,173 @@
+
+import React from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Clock, AlertCircle, CheckCircle, Package, XCircle, Eye, Edit, Play, Trash2, Phone, MessageCircle } from 'lucide-react';
+
+interface Order {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  itemType: string;
+  orderDate: string;
+  deliveryDate: string;
+  totalAmount: number;
+  advanceAmount: number;
+  remainingAmount: number;
+  quantity: number;
+  status: 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled';
+}
+
+interface OrdersListViewProps {
+  filteredOrders: Order[];
+  handleViewOrder: (order: Order) => void;
+  handleSendWhatsApp: (order: Order) => void;
+}
+
+const OrdersListView: React.FC<OrdersListViewProps> = ({
+  filteredOrders,
+  handleViewOrder,
+  handleSendWhatsApp
+}) => {
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'received':
+        return <Clock className="h-4 w-4 text-blue-600" />;
+      case 'in-progress':
+        return <AlertCircle className="h-4 w-4 text-orange-600" />;
+      case 'ready':
+        return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'delivered':
+        return <Package className="h-4 w-4 text-gray-600" />;
+      case 'cancelled':
+        return <XCircle className="h-4 w-4 text-red-600" />;
+      default:
+        return <Clock className="h-4 w-4 text-gray-400" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'received':
+        return 'text-blue-600 bg-blue-50 border-blue-200';
+      case 'in-progress':
+        return 'text-orange-600 bg-orange-50 border-orange-200';
+      case 'ready':
+        return 'text-green-600 bg-green-50 border-green-200';
+      case 'delivered':
+        return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'cancelled':
+        return 'text-red-600 bg-red-50 border-red-200';
+      default:
+        return 'text-gray-600 bg-gray-50 border-gray-200';
+    }
+  };
+
+  return (
+    <Card className="border-0 shadow-md">
+      <CardHeader>
+        <CardTitle>Orders ({filteredOrders.length})</CardTitle>
+        <CardDescription>Manage customer orders and track progress</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Order #</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Item</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Delivery</TableHead>
+                <TableHead>Order Date</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredOrders.length > 0 ? (
+                filteredOrders.map((order) => (
+                  <TableRow key={order.id} className="hover:bg-gray-50">
+                    <TableCell className="font-medium">#{order.orderNumber.slice(-3)}</TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{order.customerName}</div>
+                        <div className="text-sm text-gray-500">{order.customerEmail}</div>
+                        <div className="text-sm text-gray-500">{order.customerPhone}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2">
+                        <Button size="sm" variant="outline" onClick={() => window.open(`tel:${order.customerPhone}`)}>
+                          <Phone className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handleSendWhatsApp(order)} className="text-green-600">
+                          <MessageCircle className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{order.itemType}</div>
+                        <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">₹{order.totalAmount.toLocaleString()}</div>
+                        {order.remainingAmount > 0 && (
+                          <div className="text-sm text-red-600">Balance: ₹{order.remainingAmount.toLocaleString()}</div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={`${getStatusColor(order.status)} border`} variant="outline">
+                        <div className="flex items-center space-x-1">
+                          {getStatusIcon(order.status)}
+                          <span className="capitalize">{order.status}</span>
+                        </div>
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{order.deliveryDate}</TableCell>
+                    <TableCell>{order.orderDate}</TableCell>
+                    <TableCell>
+                      <div className="flex space-x-1">
+                        <Button size="sm" variant="outline" onClick={() => handleViewOrder(order)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="outline">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="outline">
+                          <Play className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-red-600">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-8">
+                    <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No orders found</h3>
+                    <p className="text-gray-600">Try adjusting your search or filters</p>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default OrdersListView;
