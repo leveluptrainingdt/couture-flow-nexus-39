@@ -1,10 +1,14 @@
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Clock, AlertCircle, CheckCircle, Package, XCircle, Eye, Edit, Play, Trash2, Phone, MessageCircle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Clock, AlertCircle, CheckCircle, Package, XCircle, Eye, Edit, Trash2, Phone, MessageCircle } from 'lucide-react';
+import { updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { toast } from '@/hooks/use-toast';
 
 interface Order {
   id: string;
@@ -26,13 +30,33 @@ interface OrdersListViewProps {
   filteredOrders: Order[];
   handleViewOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
+  onAdaptiveViewChange: (isOverflowing: boolean) => void;
+  onRefresh: () => void;
 }
 
 const OrdersListView: React.FC<OrdersListViewProps> = ({
   filteredOrders,
   handleViewOrder,
-  handleSendWhatsApp
+  handleSendWhatsApp,
+  onAdaptiveViewChange,
+  onRefresh
 }) => {
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string>('');
+
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (tableRef.current) {
+        const isOverflowing = tableRef.current.scrollWidth > tableRef.current.clientWidth;
+        onAdaptiveViewChange(isOverflowing);
+      }
+    };
+
+    checkOverflow();
+    window.addEventListener('resize', checkOverflow);
+    return () => window.removeEventListener('resize', checkOverflow);
+  }, [onAdaptiveViewChange, filteredOrders]);
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'received':
@@ -67,6 +91,50 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
     }
   };
 
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    setUpdatingOrderId(orderId);
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+      toast({
+        title: "Success",
+        description: "Order status updated successfully",
+      });
+      onRefresh();
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update status",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingOrderId('');
+    }
+  };
+
+  const deleteOrder = async (order: Order) => {
+    if (window.confirm(`Are you sure you want to delete order #${order.orderNumber.slice(-3)}?`)) {
+      try {
+        await deleteDoc(doc(db, 'orders', order.id));
+        toast({
+          title: "Success",
+          description: "Order deleted successfully",
+        });
+        onRefresh();
+      } catch (error) {
+        console.error('Error deleting order:', error);
+        toast({
+          title: "Error",
+          description: "Failed to delete order",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   return (
     <Card className="border-0 shadow-md">
       <CardHeader>
@@ -74,7 +142,7 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
         <CardDescription>Manage customer orders and track progress</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" ref={tableRef}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -126,12 +194,29 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge className={`${getStatusColor(order.status)} border`} variant="outline">
-                        <div className="flex items-center space-x-1">
-                          {getStatusIcon(order.status)}
-                          <span className="capitalize">{order.status}</span>
-                        </div>
-                      </Badge>
+                      <Select
+                        value={order.status}
+                        onValueChange={(value) => updateOrderStatus(order.id, value)}
+                        disabled={updatingOrderId === order.id}
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue>
+                            <Badge className={`${getStatusColor(order.status)} border`} variant="outline">
+                              <div className="flex items-center space-x-1">
+                                {getStatusIcon(order.status)}
+                                <span className="capitalize">{order.status}</span>
+                              </div>
+                            </Badge>
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="received">Received</SelectItem>
+                          <SelectItem value="in-progress">In Progress</SelectItem>
+                          <SelectItem value="ready">Ready</SelectItem>
+                          <SelectItem value="delivered">Delivered</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell>{order.deliveryDate}</TableCell>
                     <TableCell>{order.orderDate}</TableCell>
@@ -143,10 +228,12 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                         <Button size="sm" variant="outline">
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
-                          <Play className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-red-600">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="text-red-600 hover:bg-red-50"
+                          onClick={() => deleteOrder(order)}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

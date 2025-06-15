@@ -143,8 +143,8 @@ Swetha's Couture 🪡`
                     onClick={() => handleCategorySelect(category.id)}
                   >
                     <Icon className="h-6 w-6 mb-2" />
-                    <div className="font-medium">{category.title}</div>
-                    <div className="text-xs text-gray-500 mt-1">{category.description}</div>
+                    <div className="font-medium text-sm">{category.title}</div>
+                    <div className="text-xs text-gray-500 mt-1 break-words">{category.description}</div>
                   </Button>
                 );
               })}
@@ -158,8 +158,13 @@ Swetha's Couture 🪡`
               <Textarea
                 value={customMessage}
                 onChange={(e) => setCustomMessage(e.target.value)}
-                rows={12}
-                className="font-mono text-sm"
+                rows={10}
+                className="font-mono text-sm resize-none overflow-y-auto"
+                style={{ 
+                  overflowWrap: 'break-word',
+                  wordBreak: 'break-word',
+                  maxHeight: '300px'
+                }}
                 placeholder="Your message will appear here..."
               />
             </div>

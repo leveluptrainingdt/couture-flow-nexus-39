@@ -45,11 +45,11 @@ const Orders = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [view, setView] = useState<'list' | 'grid' | 'calendar'>('list');
+  const [adaptiveView, setAdaptiveView] = useState<'list' | 'grid'>('list');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [selectedGridStatus, setSelectedGridStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userData) {
@@ -58,7 +58,6 @@ const Orders = () => {
       return;
     }
     
-    // Real-time listener for orders
     const unsubscribe = onSnapshot(
       query(collection(db, 'orders'), orderBy('createdAt', 'desc')),
       (snapshot) => {
@@ -106,7 +105,6 @@ const Orders = () => {
     return () => unsubscribe();
   }, [userData]);
 
-  // Error boundary
   if (error && !loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -126,12 +124,10 @@ const Orders = () => {
     );
   }
 
-  // Loading state
   if (loading) {
     return <LoadingSpinner type="page" />;
   }
 
-  // Safe data access
   const safeOrders = Array.isArray(orders) ? orders : [];
   
   const filteredOrders = safeOrders.filter(order => {
@@ -148,7 +144,6 @@ const Orders = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // Stats calculation
   const stats = {
     total: safeOrders.length,
     revenue: safeOrders.filter(o => o?.status === 'delivered').reduce((sum, o) => sum + (o?.totalAmount || 0), 0),
@@ -168,27 +163,26 @@ const Orders = () => {
     setIsWhatsAppModalOpen(true);
   };
 
-  const handleGridStatusClick = (status: string) => {
-    setSelectedGridStatus(status);
+  const handleAdaptiveViewChange = (isOverflowing: boolean) => {
+    setAdaptiveView(isOverflowing ? 'grid' : 'list');
   };
 
   const refreshOrders = () => {
-    // Orders will refresh automatically due to real-time listener
     toast({
       title: "Success",
       description: "Orders refreshed successfully",
     });
   };
 
-  // Empty state
   if (!loading && safeOrders.length === 0) {
     return (
       <div className="space-y-6">
         <OrdersHeader
           view={view}
           setView={setView}
-          setSelectedGridStatus={setSelectedGridStatus}
+          setSelectedGridStatus={() => {}}
           setIsCreateModalOpen={setIsCreateModalOpen}
+          adaptiveView={adaptiveView}
         />
         <Card className="text-center py-12">
           <CardContent>
@@ -216,19 +210,17 @@ const Orders = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <OrdersHeader
         view={view}
         setView={setView}
-        setSelectedGridStatus={setSelectedGridStatus}
+        setSelectedGridStatus={() => {}}
         setIsCreateModalOpen={setIsCreateModalOpen}
+        adaptiveView={adaptiveView}
       />
 
-      {/* Stats Cards */}
       <OrdersStats stats={stats} />
 
-      {/* Filters and Search */}
-      {(view === 'list' || (view === 'grid' && selectedGridStatus)) && (
+      {(view !== 'calendar') && (
         <OrdersFilters
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
@@ -237,18 +229,16 @@ const Orders = () => {
         />
       )}
 
-      {/* View Content */}
       <OrdersViews
         view={view}
+        adaptiveView={adaptiveView}
         filteredOrders={filteredOrders}
-        selectedGridStatus={selectedGridStatus}
-        setSelectedGridStatus={setSelectedGridStatus}
         handleViewOrder={handleViewOrder}
         handleSendWhatsApp={handleSendWhatsApp}
-        handleGridStatusClick={handleGridStatusClick}
+        onAdaptiveViewChange={handleAdaptiveViewChange}
+        onRefresh={refreshOrders}
       />
 
-      {/* Modals */}
       {selectedOrder && (
         <>
           <OrderDetailsModal
