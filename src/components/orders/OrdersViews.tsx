@@ -25,6 +25,7 @@ interface OrdersViewsProps {
   adaptiveView: 'list' | 'grid';
   filteredOrders: Order[];
   handleViewOrder: (order: Order) => void;
+  handleEditOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
   onAdaptiveViewChange: (isOverflowing: boolean) => void;
   onRefresh: () => void;
@@ -35,6 +36,7 @@ const OrdersViews: React.FC<OrdersViewsProps> = ({
   adaptiveView,
   filteredOrders,
   handleViewOrder,
+  handleEditOrder,
   handleSendWhatsApp,
   onAdaptiveViewChange,
   onRefresh
@@ -58,6 +60,7 @@ const OrdersViews: React.FC<OrdersViewsProps> = ({
       <OrdersGridView
         filteredOrders={filteredOrders}
         handleViewOrder={handleViewOrder}
+        handleEditOrder={handleEditOrder}
         handleSendWhatsApp={handleSendWhatsApp}
         onRefresh={onRefresh}
       />
@@ -68,6 +71,7 @@ const OrdersViews: React.FC<OrdersViewsProps> = ({
     <OrdersListView
       filteredOrders={filteredOrders}
       handleViewOrder={handleViewOrder}
+      handleEditOrder={handleEditOrder}
       handleSendWhatsApp={handleSendWhatsApp}
       onAdaptiveViewChange={onAdaptiveViewChange}
       onRefresh={onRefresh}

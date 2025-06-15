@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -17,6 +16,7 @@ interface CreateOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  editOrder?: any; // Order to edit (if provided)
 }
 
 interface Staff {
@@ -55,7 +55,12 @@ interface OrderFormData {
   notes: string;
 }
 
-const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSuccess, 
+  editOrder 
+}) => {
   const [loading, setLoading] = useState(false);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -78,8 +83,30 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
   useEffect(() => {
     if (isOpen) {
       fetchData();
+      if (editOrder) {
+        populateEditForm();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, editOrder]);
+
+  const populateEditForm = () => {
+    if (!editOrder) return;
+    
+    setValue('customerName', editOrder.customerName || '');
+    setValue('customerPhone', editOrder.customerPhone || '');
+    setValue('customerEmail', editOrder.customerEmail || '');
+    setValue('itemType', editOrder.itemType || '');
+    setValue('quantity', editOrder.quantity || 1);
+    setValue('status', editOrder.status || 'received');
+    setValue('orderDate', editOrder.orderDate || new Date().toISOString().split('T')[0]);
+    setValue('deliveryDate', editOrder.deliveryDate || '');
+    setValue('totalAmount', editOrder.totalAmount || 0);
+    setValue('advanceAmount', editOrder.advanceAmount || 0);
+    setValue('notes', editOrder.notes || '');
+    
+    setSelectedStaff(editOrder.assignedStaff || []);
+    setSelectedMaterials(editOrder.requiredMaterials || []);
+  };
 
   useEffect(() => {
     if (customerNameValue && customerNameValue.length > 1) {
@@ -127,16 +154,11 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
   const onSubmit = async (data: OrderFormData) => {
     setLoading(true);
     try {
-      // Generate order number
-      const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
-      
-      // Calculate remaining amount
       const remainingAmount = (data.totalAmount || 0) - (data.advanceAmount || 0);
 
-      // Create order document
       const orderData = {
-        orderId: orderNumber,
-        orderNumber: orderNumber,
+        orderId: editOrder?.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
+        orderNumber: editOrder?.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
         customerName: data.customerName,
         customerPhone: data.customerPhone,
         customerEmail: data.customerEmail || '',
@@ -153,19 +175,34 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
         assignedStaff: selectedStaff,
         requiredMaterials: selectedMaterials.map(m => m.id),
         designImages: [], // TODO: Upload images to storage
-        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        measurements: {},
-        progress: {
+        measurements: editOrder?.measurements || {},
+        progress: editOrder?.progress || {
           cutting: false,
           stitching: false,
           finishing: false
         },
-        priority: 'normal'
+        priority: editOrder?.priority || 'normal'
       };
 
-      // Add order to Firestore
-      const orderRef = await addDoc(collection(db, 'orders'), orderData);
+      if (editOrder) {
+        // Update existing order
+        await updateDoc(doc(db, 'orders', editOrder.id), orderData);
+        toast({
+          title: "Success",
+          description: "Order updated successfully",
+        });
+      } else {
+        // Create new order
+        await addDoc(collection(db, 'orders'), {
+          ...orderData,
+          createdAt: serverTimestamp()
+        });
+        toast({
+          title: "Success",
+          description: "Order created successfully",
+        });
+      }
 
       // Create customer if not exists
       if (data.customerName && !customers.find(c => c.name === data.customerName)) {
@@ -198,11 +235,6 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
         }
       }
 
-      toast({
-        title: "Success",
-        description: "Order created successfully",
-      });
-
       reset();
       setSelectedStaff([]);
       setSelectedMaterials([]);
@@ -210,10 +242,10 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
       onSuccess();
       onClose();
     } catch (error) {
-      console.error('Error creating order:', error);
+      console.error('Error saving order:', error);
       toast({
         title: "Error",
-        description: "Failed to create order",
+        description: `Failed to ${editOrder ? 'update' : 'create'} order`,
         variant: "destructive",
       });
     } finally {
@@ -225,7 +257,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Order</DialogTitle>
+          <DialogTitle>{editOrder ? 'Edit Order' : 'Create New Order'}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -282,7 +314,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
               disabled={loading}
               className="bg-gradient-to-r from-blue-600 to-purple-600"
             >
-              {loading ? 'Creating...' : 'Create Order'}
+              {loading ? (editOrder ? 'Updating...' : 'Creating...') : (editOrder ? 'Update Order' : 'Create Order')}
             </Button>
           </div>
         </form>

@@ -29,6 +29,7 @@ interface Order {
 interface OrdersListViewProps {
   filteredOrders: Order[];
   handleViewOrder: (order: Order) => void;
+  handleEditOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
   onAdaptiveViewChange: (isOverflowing: boolean) => void;
   onRefresh: () => void;
@@ -37,6 +38,7 @@ interface OrdersListViewProps {
 const OrdersListView: React.FC<OrdersListViewProps> = ({
   filteredOrders,
   handleViewOrder,
+  handleEditOrder,
   handleSendWhatsApp,
   onAdaptiveViewChange,
   onRefresh
@@ -136,7 +138,7 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
   };
 
   return (
-    <Card className="border-0 shadow-md">
+    <Card className="border-0 shadow-md overflow-x-hidden">
       <CardHeader>
         <CardTitle>Orders ({filteredOrders.length})</CardTitle>
         <CardDescription>Manage customer orders and track progress</CardDescription>
@@ -225,7 +227,7 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                         <Button size="sm" variant="outline" onClick={() => handleViewOrder(order)}>
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => handleEditOrder(order)}>
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,7 +50,7 @@ const Billing = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'partial' | 'unpaid'>('all');
   const [filterDateRange, setFilterDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
-  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('grid'); // Default to grid
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -148,7 +147,7 @@ const Billing = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 animate-fade-in p-4 sm:p-6">
+      <div className="space-y-6 animate-fade-in p-4 sm:p-6 overflow-x-hidden">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold text-gray-900">Billing Dashboard</h1>
         </div>
@@ -161,7 +160,7 @@ const Billing = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in p-4 sm:p-6">
+    <div className="space-y-6 animate-fade-in p-4 sm:p-6 overflow-x-hidden">
       {/* Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
@@ -281,20 +280,20 @@ const Billing = () => {
               
               <div className="flex border rounded-lg bg-gray-50">
                 <Button
-                  variant={viewMode === 'table' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setViewMode('table')}
-                  className="rounded-r-none"
-                >
-                  <List className="h-4 w-4" />
-                </Button>
-                <Button
                   variant={viewMode === 'grid' ? 'default' : 'ghost'}
                   size="sm"
                   onClick={() => setViewMode('grid')}
-                  className="rounded-l-none"
+                  className="rounded-r-none"
                 >
                   <Grid3X3 className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === 'table' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('table')}
+                  className="rounded-l-none"
+                >
+                  <List className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -303,7 +302,7 @@ const Billing = () => {
       </Card>
 
       {/* Bills Content */}
-      <Card className="shadow-sm">
+      <Card className="shadow-sm overflow-x-hidden">
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <span>Bills ({filteredBills.length})</span>
@@ -434,7 +433,7 @@ const Billing = () => {
               </Table>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-x-hidden">
               {filteredBills.map((bill: Bill) => {
                 const status = calculateBillStatus(bill.totalAmount, bill.paidAmount);
                 return (

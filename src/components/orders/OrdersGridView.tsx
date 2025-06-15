@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +27,7 @@ interface Order {
 interface OrdersGridViewProps {
   filteredOrders: Order[];
   handleViewOrder: (order: Order) => void;
+  handleEditOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
   onRefresh: () => void;
 }
@@ -35,6 +35,7 @@ interface OrdersGridViewProps {
 const OrdersGridView: React.FC<OrdersGridViewProps> = ({
   filteredOrders,
   handleViewOrder,
+  handleEditOrder,
   handleSendWhatsApp,
   onRefresh
 }) => {
@@ -107,113 +108,116 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {filteredOrders.map(order => (
-        <Card key={order.id} className="hover:shadow-lg transition-all">
-          <CardHeader className="pb-3">
-            <div className="flex justify-between items-start">
-              <div className="font-medium">#{order.orderNumber.slice(-3)}</div>
-              <Badge className={`${getStatusColor(order.status)} border`} variant="outline">
-                <div className="flex items-center space-x-1">
-                  {getStatusIcon(order.status)}
-                  <span className="capitalize">{order.status}</span>
+    <div className="overflow-x-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {filteredOrders.map(order => (
+          <Card key={order.id} className="hover:shadow-lg transition-all">
+            <CardHeader className="pb-3">
+              <div className="flex justify-between items-start">
+                <div className="font-medium">#{order.orderNumber.slice(-3)}</div>
+                <Badge className={`${getStatusColor(order.status)} border`} variant="outline">
+                  <div className="flex items-center space-x-1">
+                    {getStatusIcon(order.status)}
+                    <span className="capitalize">{order.status}</span>
+                  </div>
+                </Badge>
+              </div>
+              <div className="text-lg font-semibold">{order.customerName}</div>
+              <div className="text-sm text-gray-500">
+                <div>{order.customerEmail}</div>
+                <div>{order.customerPhone}</div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <div className="font-medium">{order.itemType}</div>
+                <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
+              </div>
+              
+              <div>
+                <div className="font-medium">₹{order.totalAmount.toLocaleString()}</div>
+                {order.remainingAmount > 0 && (
+                  <div className="text-sm text-red-600">Balance: ₹{order.remainingAmount.toLocaleString()}</div>
+                )}
+              </div>
+
+              <div className="text-sm text-gray-600">
+                <div>Order: {order.orderDate}</div>
+                <div>Delivery: {order.deliveryDate}</div>
+              </div>
+
+              <div className="space-y-2">
+                <Select
+                  value={order.status}
+                  onValueChange={(value) => updateOrderStatus(order.id, value)}
+                  disabled={updatingOrderId === order.id}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="received">Received</SelectItem>
+                    <SelectItem value="in-progress">In Progress</SelectItem>
+                    <SelectItem value="ready">Ready</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div className="flex space-x-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleViewOrder(order)}
+                    className="flex-1"
+                  >
+                    <Eye className="h-4 w-4 mr-1" />
+                    View
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleEditOrder(order)}
+                    className="flex-1"
+                  >
+                    <Edit className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-red-600 hover:bg-red-50"
+                    onClick={() => deleteOrder(order)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
-              </Badge>
-            </div>
-            <div className="text-lg font-semibold">{order.customerName}</div>
-            <div className="text-sm text-gray-500">
-              <div>{order.customerEmail}</div>
-              <div>{order.customerPhone}</div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div>
-              <div className="font-medium">{order.itemType}</div>
-              <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
-            </div>
-            
-            <div>
-              <div className="font-medium">₹{order.totalAmount.toLocaleString()}</div>
-              {order.remainingAmount > 0 && (
-                <div className="text-sm text-red-600">Balance: ₹{order.remainingAmount.toLocaleString()}</div>
-              )}
-            </div>
 
-            <div className="text-sm text-gray-600">
-              <div>Order: {order.orderDate}</div>
-              <div>Delivery: {order.deliveryDate}</div>
-            </div>
-
-            <div className="space-y-2">
-              <Select
-                value={order.status}
-                onValueChange={(value) => updateOrderStatus(order.id, value)}
-                disabled={updatingOrderId === order.id}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="received">Received</SelectItem>
-                  <SelectItem value="in-progress">In Progress</SelectItem>
-                  <SelectItem value="ready">Ready</SelectItem>
-                  <SelectItem value="delivered">Delivered</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <div className="flex space-x-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleViewOrder(order)}
-                  className="flex-1"
-                >
-                  <Eye className="h-4 w-4 mr-1" />
-                  View
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1"
-                >
-                  <Edit className="h-4 w-4 mr-1" />
-                  Edit
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-red-600 hover:bg-red-50"
-                  onClick={() => deleteOrder(order)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex space-x-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(`tel:${order.customerPhone}`)}
+                    className="flex-1"
+                  >
+                    <Phone className="h-4 w-4 mr-1" />
+                    Call
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSendWhatsApp(order)}
+                    className="text-green-600 flex-1"
+                  >
+                    <MessageCircle className="h-4 w-4 mr-1" />
+                    WhatsApp
+                  </Button>
+                </div>
               </div>
-
-              <div className="flex space-x-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => window.open(`tel:${order.customerPhone}`)}
-                  className="flex-1"
-                >
-                  <Phone className="h-4 w-4 mr-1" />
-                  Call
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleSendWhatsApp(order)}
-                  className="text-green-600 flex-1"
-                >
-                  <MessageCircle className="h-4 w-4 mr-1" />
-                  WhatsApp
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 };

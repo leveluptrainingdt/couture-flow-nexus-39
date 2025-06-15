@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -44,12 +43,13 @@ const Orders = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [view, setView] = useState<'list' | 'grid' | 'calendar'>('list');
-  const [adaptiveView, setAdaptiveView] = useState<'list' | 'grid'>('list');
+  const [view, setView] = useState<'list' | 'grid' | 'calendar'>('grid'); // Default to grid
+  const [adaptiveView, setAdaptiveView] = useState<'list' | 'grid'>('grid');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
 
   useEffect(() => {
     if (!userData) {
@@ -157,6 +157,13 @@ const Orders = () => {
     setIsDetailsModalOpen(true);
   };
 
+  const handleEditOrder = (order: Order) => {
+    if (!order) return;
+    setSelectedOrder(order);
+    setIsEditMode(true);
+    setIsCreateModalOpen(true);
+  };
+
   const handleSendWhatsApp = (order: Order) => {
     if (!order) return;
     setSelectedOrder(order);
@@ -172,6 +179,12 @@ const Orders = () => {
       title: "Success",
       description: "Orders refreshed successfully",
     });
+  };
+
+  const handleCreateModalClose = () => {
+    setIsCreateModalOpen(false);
+    setIsEditMode(false);
+    setSelectedOrder(null);
   };
 
   if (!loading && safeOrders.length === 0) {
@@ -201,15 +214,16 @@ const Orders = () => {
         
         <CreateOrderModal
           isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
+          onClose={handleCreateModalClose}
           onSuccess={refreshOrders}
+          editOrder={isEditMode ? selectedOrder : undefined}
         />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       <OrdersHeader
         view={view}
         setView={setView}
@@ -234,6 +248,7 @@ const Orders = () => {
         adaptiveView={adaptiveView}
         filteredOrders={filteredOrders}
         handleViewOrder={handleViewOrder}
+        handleEditOrder={handleEditOrder}
         handleSendWhatsApp={handleSendWhatsApp}
         onAdaptiveViewChange={handleAdaptiveViewChange}
         onRefresh={refreshOrders}
@@ -264,8 +279,9 @@ const Orders = () => {
 
       <CreateOrderModal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={handleCreateModalClose}
         onSuccess={refreshOrders}
+        editOrder={isEditMode ? selectedOrder : undefined}
       />
     </div>
   );
