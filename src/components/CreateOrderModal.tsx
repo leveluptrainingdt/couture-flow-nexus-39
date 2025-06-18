@@ -230,9 +230,13 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
           description: "Order updated successfully",
         });
       } else {
-        // Create new order
-        orderData.createdAt = serverTimestamp();
-        const docRef = await addDoc(collection(db, 'orders'), orderData);
+        // Create new order - add createdAt for new orders only
+        const newOrderData = {
+          ...orderData,
+          createdAt: serverTimestamp()
+        };
+        
+        const docRef = await addDoc(collection(db, 'orders'), newOrderData);
 
         // Create customer if not exists
         if (data.customerName && !customers.find(c => c.name === data.customerName)) {
