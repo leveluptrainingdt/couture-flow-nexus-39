@@ -12,11 +12,13 @@ import StaffAssignment from '@/components/StaffAssignment';
 import RequiredMaterials from '@/components/RequiredMaterials';
 import DesignImagesSection from '@/components/order-form/DesignImagesSection';
 import NotesSection from '@/components/order-form/NotesSection';
+import MultipleItemsSection from '@/components/order-form/MultipleItemsSection';
 
 interface CreateOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  editingOrder?: any;
 }
 
 interface Staff {
@@ -41,6 +43,14 @@ interface RequiredMaterial {
   unit: string;
 }
 
+interface OrderItem {
+  category: string;
+  description: string;
+  price: number;
+  quantity: number;
+  assignedPerson: string;
+}
+
 interface OrderFormData {
   customerName: string;
   customerPhone: string;
@@ -55,7 +65,7 @@ interface OrderFormData {
   notes: string;
 }
 
-const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, onSuccess }) => {
+const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, onSuccess, editingOrder }) => {
   const [loading, setLoading] = useState(false);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -64,6 +74,8 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
   const [designImages, setDesignImages] = useState<File[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const [useMultipleItems, setUseMultipleItems] = useState(false);
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<OrderFormData>({
     defaultValues: {
@@ -78,8 +90,13 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
   useEffect(() => {
     if (isOpen) {
       fetchData();
+      if (editingOrder) {
+        populateEditForm();
+      } else {
+        resetForm();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, editingOrder]);
 
   useEffect(() => {
     if (customerNameValue && customerNameValue.length > 1) {
@@ -88,6 +105,43 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
       setShowCustomerSuggestions(false);
     }
   }, [customerNameValue]);
+
+  const populateEditForm = () => {
+    if (!editingOrder) return;
+
+    setValue('customerName', editingOrder.customerName || '');
+    setValue('customerPhone', editingOrder.customerPhone || '');
+    setValue('customerEmail', editingOrder.customerEmail || '');
+    setValue('itemType', editingOrder.itemType || '');
+    setValue('quantity', editingOrder.quantity || 1);
+    setValue('status', editingOrder.status || 'received');
+    setValue('orderDate', editingOrder.orderDate || new Date().toISOString().split('T')[0]);
+    setValue('deliveryDate', editingOrder.deliveryDate || '');
+    setValue('totalAmount', editingOrder.totalAmount || 0);
+    setValue('advanceAmount', editingOrder.advanceAmount || 0);
+    setValue('notes', editingOrder.notes || '');
+
+    if (editingOrder.items && editingOrder.items.length > 0) {
+      setOrderItems(editingOrder.items);
+      setUseMultipleItems(true);
+    }
+
+    setSelectedStaff(editingOrder.assignedStaff || []);
+    setSelectedMaterials(editingOrder.requiredMaterials || []);
+  };
+
+  const resetForm = () => {
+    reset({
+      status: 'received',
+      orderDate: new Date().toISOString().split('T')[0],
+      quantity: 1
+    });
+    setSelectedStaff([]);
+    setSelectedMaterials([]);
+    setDesignImages([]);
+    setOrderItems([]);
+    setUseMultipleItems(false);
+  };
 
   const fetchData = async () => {
     try {
@@ -127,24 +181,29 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
   const onSubmit = async (data: OrderFormData) => {
     setLoading(true);
     try {
-      // Generate order number
-      const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
-      
-      // Calculate remaining amount
-      const remainingAmount = (data.totalAmount || 0) - (data.advanceAmount || 0);
+      // Calculate total from items if using multiple items
+      let finalTotalAmount = data.totalAmount || 0;
+      let finalQuantity = data.quantity || 1;
 
-      // Create order document
+      if (useMultipleItems && orderItems.length > 0) {
+        finalTotalAmount = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        finalQuantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+      }
+
+      const remainingAmount = finalTotalAmount - (data.advanceAmount || 0);
+
       const orderData = {
-        orderId: orderNumber,
-        orderNumber: orderNumber,
+        orderId: editingOrder?.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
+        orderNumber: editingOrder?.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
         customerName: data.customerName,
         customerPhone: data.customerPhone,
         customerEmail: data.customerEmail || '',
         dressType: data.itemType,
         itemType: data.itemType,
-        quantity: data.quantity,
+        items: useMultipleItems ? orderItems : [],
+        quantity: finalQuantity,
         status: data.status,
-        totalAmount: data.totalAmount || 0,
+        totalAmount: finalTotalAmount,
         advanceAmount: data.advanceAmount || 0,
         balance: remainingAmount,
         remainingAmount: remainingAmount,
@@ -153,67 +212,73 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
         assignedStaff: selectedStaff,
         requiredMaterials: selectedMaterials.map(m => m.id),
         designImages: [], // TODO: Upload images to storage
-        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        measurements: {},
-        progress: {
+        measurements: editingOrder?.measurements || {},
+        progress: editingOrder?.progress || {
           cutting: false,
           stitching: false,
           finishing: false
         },
-        priority: 'normal'
+        priority: editingOrder?.priority || 'normal'
       };
 
-      // Add order to Firestore
-      const orderRef = await addDoc(collection(db, 'orders'), orderData);
-
-      // Create customer if not exists
-      if (data.customerName && !customers.find(c => c.name === data.customerName)) {
-        await addDoc(collection(db, 'customers'), {
-          name: data.customerName,
-          phone: data.customerPhone,
-          email: data.customerEmail || '',
-          createdAt: serverTimestamp(),
-          orders: [orderRef.id]
+      if (editingOrder) {
+        // Update existing order
+        await updateDoc(doc(db, 'orders', editingOrder.id), orderData);
+        toast({
+          title: "Success",
+          description: "Order updated successfully",
         });
       } else {
-        // Update existing customer with new order
-        const existingCustomer = customers.find(c => c.name === data.customerName);
-        if (existingCustomer) {
-          await updateDoc(doc(db, 'customers', existingCustomer.id), {
-            orders: [...(existingCustomer.orders || []), orderRef.id],
-            updatedAt: serverTimestamp()
+        // Create new order
+        orderData.createdAt = serverTimestamp();
+        const docRef = await addDoc(collection(db, 'orders'), orderData);
+
+        // Create customer if not exists
+        if (data.customerName && !customers.find(c => c.name === data.customerName)) {
+          await addDoc(collection(db, 'customers'), {
+            name: data.customerName,
+            phone: data.customerPhone,
+            email: data.customerEmail || '',
+            createdAt: serverTimestamp(),
+            orders: [docRef.id]
           });
+        } else {
+          // Update existing customer with new order
+          const existingCustomer = customers.find(c => c.name === data.customerName);
+          if (existingCustomer) {
+            await updateDoc(doc(db, 'customers', existingCustomer.id), {
+              orders: [...(existingCustomer.orders || []), docRef.id],
+              updatedAt: serverTimestamp()
+            });
+          }
         }
+
+        // Update inventory quantities for selected materials
+        for (const material of selectedMaterials) {
+          const inventoryItem = materials.find(m => m.id === material.id);
+          if (inventoryItem && inventoryItem.quantity >= material.quantity) {
+            await updateDoc(doc(db, 'inventory', material.id), {
+              quantity: inventoryItem.quantity - material.quantity,
+              updatedAt: serverTimestamp()
+            });
+          }
+        }
+
+        toast({
+          title: "Success",
+          description: "Order created successfully",
+        });
       }
 
-      // Update inventory quantities for selected materials
-      for (const material of selectedMaterials) {
-        const inventoryItem = materials.find(m => m.id === material.id);
-        if (inventoryItem && inventoryItem.quantity >= material.quantity) {
-          await updateDoc(doc(db, 'inventory', material.id), {
-            quantity: inventoryItem.quantity - material.quantity,
-            updatedAt: serverTimestamp()
-          });
-        }
-      }
-
-      toast({
-        title: "Success",
-        description: "Order created successfully",
-      });
-
-      reset();
-      setSelectedStaff([]);
-      setSelectedMaterials([]);
-      setDesignImages([]);
+      resetForm();
       onSuccess();
       onClose();
     } catch (error) {
-      console.error('Error creating order:', error);
+      console.error('Error saving order:', error);
       toast({
         title: "Error",
-        description: "Failed to create order",
+        description: editingOrder ? "Failed to update order" : "Failed to create order",
         variant: "destructive",
       });
     } finally {
@@ -225,7 +290,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Order</DialogTitle>
+          <DialogTitle>{editingOrder ? 'Edit Order' : 'Create New Order'}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -240,12 +305,22 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
             setShowCustomerSuggestions={setShowCustomerSuggestions}
           />
 
-          {/* Order Details */}
-          <OrderDetailsSection
-            register={register}
-            errors={errors}
-            setValue={setValue}
+          {/* Multiple Items or Single Order Details */}
+          <MultipleItemsSection
+            useMultipleItems={useMultipleItems}
+            setUseMultipleItems={setUseMultipleItems}
+            orderItems={orderItems}
+            setOrderItems={setOrderItems}
+            customerName={customerNameValue}
           />
+
+          {!useMultipleItems && (
+            <OrderDetailsSection
+              register={register}
+              errors={errors}
+              setValue={setValue}
+            />
+          )}
 
           {/* Assign Staff */}
           {staff.length > 0 && (
@@ -282,7 +357,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
               disabled={loading}
               className="bg-gradient-to-r from-blue-600 to-purple-600"
             >
-              {loading ? 'Creating...' : 'Create Order'}
+              {loading ? (editingOrder ? 'Updating...' : 'Creating...') : (editingOrder ? 'Update Order' : 'Create Order')}
             </Button>
           </div>
         </form>

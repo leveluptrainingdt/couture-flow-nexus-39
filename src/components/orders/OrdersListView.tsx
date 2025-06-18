@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,65 +29,39 @@ interface Order {
 interface OrdersListViewProps {
   filteredOrders: Order[];
   handleViewOrder: (order: Order) => void;
+  handleEditOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
-  onAdaptiveViewChange: (isOverflowing: boolean) => void;
   onRefresh: () => void;
 }
 
 const OrdersListView: React.FC<OrdersListViewProps> = ({
   filteredOrders,
   handleViewOrder,
+  handleEditOrder,
   handleSendWhatsApp,
-  onAdaptiveViewChange,
   onRefresh
 }) => {
-  const tableRef = useRef<HTMLDivElement>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string>('');
-
-  useEffect(() => {
-    const checkOverflow = () => {
-      if (tableRef.current) {
-        const isOverflowing = tableRef.current.scrollWidth > tableRef.current.clientWidth;
-        onAdaptiveViewChange(isOverflowing);
-      }
-    };
-
-    checkOverflow();
-    window.addEventListener('resize', checkOverflow);
-    return () => window.removeEventListener('resize', checkOverflow);
-  }, [onAdaptiveViewChange, filteredOrders]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'received':
-        return <Clock className="h-4 w-4 text-blue-600" />;
-      case 'in-progress':
-        return <AlertCircle className="h-4 w-4 text-orange-600" />;
-      case 'ready':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'delivered':
-        return <Package className="h-4 w-4 text-gray-600" />;
-      case 'cancelled':
-        return <XCircle className="h-4 w-4 text-red-600" />;
-      default:
-        return <Clock className="h-4 w-4 text-gray-400" />;
+      case 'received': return <Clock className="h-4 w-4 text-blue-600" />;
+      case 'in-progress': return <AlertCircle className="h-4 w-4 text-orange-600" />;
+      case 'ready': return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'delivered': return <Package className="h-4 w-4 text-gray-600" />;
+      case 'cancelled': return <XCircle className="h-4 w-4 text-red-600" />;
+      default: return <Clock className="h-4 w-4 text-gray-400" />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'received':
-        return 'text-blue-600 bg-blue-50 border-blue-200';
-      case 'in-progress':
-        return 'text-orange-600 bg-orange-50 border-orange-200';
-      case 'ready':
-        return 'text-green-600 bg-green-50 border-green-200';
-      case 'delivered':
-        return 'text-gray-600 bg-gray-50 border-gray-200';
-      case 'cancelled':
-        return 'text-red-600 bg-red-50 border-red-200';
-      default:
-        return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'received': return 'text-blue-600 bg-blue-50 border-blue-200';
+      case 'in-progress': return 'text-orange-600 bg-orange-50 border-orange-200';
+      case 'ready': return 'text-green-600 bg-green-50 border-green-200';
+      case 'delivered': return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'cancelled': return 'text-red-600 bg-red-50 border-red-200';
+      default: return 'text-gray-600 bg-gray-50 border-gray-200';
     }
   };
 
@@ -142,7 +116,7 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
         <CardDescription>Manage customer orders and track progress</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto" ref={tableRef}>
+        <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -165,7 +139,9 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                     <TableCell>
                       <div>
                         <div className="font-medium">{order.customerName}</div>
-                        <div className="text-sm text-gray-500">{order.customerEmail}</div>
+                        {order.customerEmail && (
+                          <div className="text-sm text-gray-500">{order.customerEmail}</div>
+                        )}
                         <div className="text-sm text-gray-500">{order.customerPhone}</div>
                       </div>
                     </TableCell>
@@ -225,7 +201,7 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                         <Button size="sm" variant="outline" onClick={() => handleViewOrder(order)}>
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => handleEditOrder(order)}>
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button 
