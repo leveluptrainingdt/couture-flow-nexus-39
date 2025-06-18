@@ -185,16 +185,19 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
         priority: editOrder?.priority || 'normal'
       };
 
+      let orderDocRef;
+
       if (editOrder) {
         // Update existing order
         await updateDoc(doc(db, 'orders', editOrder.id), orderData);
+        orderDocRef = { id: editOrder.id };
         toast({
           title: "Success",
           description: "Order updated successfully",
         });
       } else {
         // Create new order
-        await addDoc(collection(db, 'orders'), {
+        orderDocRef = await addDoc(collection(db, 'orders'), {
           ...orderData,
           createdAt: serverTimestamp()
         });
@@ -211,14 +214,14 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
           phone: data.customerPhone,
           email: data.customerEmail || '',
           createdAt: serverTimestamp(),
-          orders: [orderRef.id]
+          orders: [orderDocRef.id]
         });
       } else {
         // Update existing customer with new order
         const existingCustomer = customers.find(c => c.name === data.customerName);
-        if (existingCustomer) {
+        if (existingCustomer && !editOrder) {
           await updateDoc(doc(db, 'customers', existingCustomer.id), {
-            orders: [...(existingCustomer.orders || []), orderRef.id],
+            orders: [...(existingCustomer.orders || []), orderDocRef.id],
             updatedAt: serverTimestamp()
           });
         }

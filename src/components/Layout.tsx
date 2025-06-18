@@ -4,7 +4,11 @@ import { Outlet } from 'react-router-dom';
 import ResponsiveSidebar from './ResponsiveSidebar';
 import { Toaster } from '@/components/ui/toaster';
 
-const Layout = () => {
+interface LayoutProps {
+  children?: React.ReactNode;
+}
+
+const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -27,7 +31,7 @@ const Layout = () => {
       
       <div className="flex-1 flex flex-col min-w-0">
         <main className="flex-1 p-4 sm:p-6 overflow-x-hidden">
-          <Outlet />
+          {children || <Outlet />}
         </main>
       </div>
       
