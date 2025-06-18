@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,6 @@ interface CreateOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  editOrder?: any; // Order to edit (if provided)
 }
 
 interface Staff {
@@ -55,12 +55,7 @@ interface OrderFormData {
   notes: string;
 }
 
-const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSuccess, 
-  editOrder 
-}) => {
+const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -83,30 +78,8 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       fetchData();
-      if (editOrder) {
-        populateEditForm();
-      }
     }
-  }, [isOpen, editOrder]);
-
-  const populateEditForm = () => {
-    if (!editOrder) return;
-    
-    setValue('customerName', editOrder.customerName || '');
-    setValue('customerPhone', editOrder.customerPhone || '');
-    setValue('customerEmail', editOrder.customerEmail || '');
-    setValue('itemType', editOrder.itemType || '');
-    setValue('quantity', editOrder.quantity || 1);
-    setValue('status', editOrder.status || 'received');
-    setValue('orderDate', editOrder.orderDate || new Date().toISOString().split('T')[0]);
-    setValue('deliveryDate', editOrder.deliveryDate || '');
-    setValue('totalAmount', editOrder.totalAmount || 0);
-    setValue('advanceAmount', editOrder.advanceAmount || 0);
-    setValue('notes', editOrder.notes || '');
-    
-    setSelectedStaff(editOrder.assignedStaff || []);
-    setSelectedMaterials(editOrder.requiredMaterials || []);
-  };
+  }, [isOpen]);
 
   useEffect(() => {
     if (customerNameValue && customerNameValue.length > 1) {
@@ -154,11 +127,16 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
   const onSubmit = async (data: OrderFormData) => {
     setLoading(true);
     try {
+      // Generate order number
+      const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
+      
+      // Calculate remaining amount
       const remainingAmount = (data.totalAmount || 0) - (data.advanceAmount || 0);
 
+      // Create order document
       const orderData = {
-        orderId: editOrder?.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
-        orderNumber: editOrder?.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
+        orderId: orderNumber,
+        orderNumber: orderNumber,
         customerName: data.customerName,
         customerPhone: data.customerPhone,
         customerEmail: data.customerEmail || '',
@@ -175,37 +153,19 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
         assignedStaff: selectedStaff,
         requiredMaterials: selectedMaterials.map(m => m.id),
         designImages: [], // TODO: Upload images to storage
+        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        measurements: editOrder?.measurements || {},
-        progress: editOrder?.progress || {
+        measurements: {},
+        progress: {
           cutting: false,
           stitching: false,
           finishing: false
         },
-        priority: editOrder?.priority || 'normal'
+        priority: 'normal'
       };
 
-      let orderDocRef;
-
-      if (editOrder) {
-        // Update existing order
-        await updateDoc(doc(db, 'orders', editOrder.id), orderData);
-        orderDocRef = { id: editOrder.id };
-        toast({
-          title: "Success",
-          description: "Order updated successfully",
-        });
-      } else {
-        // Create new order
-        orderDocRef = await addDoc(collection(db, 'orders'), {
-          ...orderData,
-          createdAt: serverTimestamp()
-        });
-        toast({
-          title: "Success",
-          description: "Order created successfully",
-        });
-      }
+      // Add order to Firestore
+      const orderRef = await addDoc(collection(db, 'orders'), orderData);
 
       // Create customer if not exists
       if (data.customerName && !customers.find(c => c.name === data.customerName)) {
@@ -214,14 +174,14 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
           phone: data.customerPhone,
           email: data.customerEmail || '',
           createdAt: serverTimestamp(),
-          orders: [orderDocRef.id]
+          orders: [orderRef.id]
         });
       } else {
         // Update existing customer with new order
         const existingCustomer = customers.find(c => c.name === data.customerName);
-        if (existingCustomer && !editOrder) {
+        if (existingCustomer) {
           await updateDoc(doc(db, 'customers', existingCustomer.id), {
-            orders: [...(existingCustomer.orders || []), orderDocRef.id],
+            orders: [...(existingCustomer.orders || []), orderRef.id],
             updatedAt: serverTimestamp()
           });
         }
@@ -238,6 +198,11 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
         }
       }
 
+      toast({
+        title: "Success",
+        description: "Order created successfully",
+      });
+
       reset();
       setSelectedStaff([]);
       setSelectedMaterials([]);
@@ -245,10 +210,10 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
       onSuccess();
       onClose();
     } catch (error) {
-      console.error('Error saving order:', error);
+      console.error('Error creating order:', error);
       toast({
         title: "Error",
-        description: `Failed to ${editOrder ? 'update' : 'create'} order`,
+        description: "Failed to create order",
         variant: "destructive",
       });
     } finally {
@@ -260,7 +225,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editOrder ? 'Edit Order' : 'Create New Order'}</DialogTitle>
+          <DialogTitle>Create New Order</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -317,7 +282,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({
               disabled={loading}
               className="bg-gradient-to-r from-blue-600 to-purple-600"
             >
-              {loading ? (editOrder ? 'Updating...' : 'Creating...') : (editOrder ? 'Update Order' : 'Create Order')}
+              {loading ? 'Creating...' : 'Create Order'}
             </Button>
           </div>
         </form>
