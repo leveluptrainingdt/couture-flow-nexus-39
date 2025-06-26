@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -129,11 +130,11 @@ const OrdersPage = () => {
               return {
                 id: doc.id,
                 orderNumber: data.orderId || data.orderNumber || `ORD-${doc.id.slice(-6)}`,
-                customerName: data.customerName || '',
+                customerName: data.customerName || 'Unknown Customer',
                 customerPhone: data.customerPhone || '',
                 customerEmail: data.customerEmail || '',
                 items: data.items || [],
-                itemType: data.dressType || data.itemType || '',
+                itemType: data.dressType || data.itemType || 'Unknown Item',
                 orderDate: data.orderDate || data.createdAt?.toDate?.()?.toLocaleDateString() || new Date().toLocaleDateString(),
                 deliveryDate: data.deliveryDate || '',
                 totalAmount: data.totalAmount || 0,
@@ -147,7 +148,7 @@ const OrdersPage = () => {
                 assignedStaff: data.assignedStaff || [],
                 requiredMaterials: data.requiredMaterials || []
               } as Order;
-            });
+            }).filter(order => order && order.customerName); // Filter out any invalid orders
             
             console.log('Processed orders data:', ordersData);
             setOrders(ordersData);
@@ -205,11 +206,12 @@ const OrdersPage = () => {
   }
 
   console.log('Processing orders for display...');
-  const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeOrders = Array.isArray(orders) ? orders.filter(order => order && order.customerName) : [];
   console.log('Safe orders count:', safeOrders.length);
   
-  // Date filtering logic
+  // Date filtering logic with null checks
   const dateFilteredOrders = safeOrders.filter(order => {
+    if (!order) return false;
     if (!dateFilter.from && !dateFilter.to) return true;
     
     const orderDate = new Date(order.orderDate);
@@ -228,15 +230,17 @@ const OrdersPage = () => {
   });
   
   const filteredOrders = dateFilteredOrders.filter(order => {
-    if (!order) return false;
+    if (!order || !order.customerName) return false;
     
     const matchesSearch = (
       (order.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (order.orderNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (order.itemType || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (order.items || []).some(item => 
-        (item.madeFor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (item.category || '').toLowerCase().includes(searchTerm.toLowerCase())
+        item && (
+          (item.madeFor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (item.category || '').toLowerCase().includes(searchTerm.toLowerCase())
+        )
       )
     );
     
@@ -250,14 +254,14 @@ const OrdersPage = () => {
   // Calculate stats for OrdersStats component
   const stats = {
     total: safeOrders.length,
-    revenue: safeOrders.filter(order => order.status === 'delivered').reduce((sum, order) => sum + (order.totalAmount || 0), 0),
-    pending: safeOrders.filter(order => order.status === 'received').length,
-    inProgress: safeOrders.filter(order => order.status === 'in-progress').length
+    revenue: safeOrders.filter(order => order && order.status === 'delivered').reduce((sum, order) => sum + (order.totalAmount || 0), 0),
+    pending: safeOrders.filter(order => order && order.status === 'received').length,
+    inProgress: safeOrders.filter(order => order && order.status === 'in-progress').length
   };
 
   // New Bill functionality
   const handleBillOrder = async (order: Order) => {
-    if (!order) return;
+    if (!order || !order.customerName) return;
     
     try {
       // Check if bill already exists for this order
@@ -313,16 +317,19 @@ const OrdersPage = () => {
   };
 
   const handleViewOrder = (order: Order) => {
+    if (!order) return;
     setSelectedOrder(order);
     setIsDetailsModalOpen(true);
   };
 
   const handleEditOrder = (order: Order) => {
+    if (!order) return;
     setEditingOrder(order);
     setIsCreateModalOpen(true);
   };
 
   const handleSendWhatsApp = (order: Order) => {
+    if (!order) return;
     setSelectedOrder(order);
     setIsWhatsAppModalOpen(true);
   };
@@ -336,9 +343,10 @@ const OrdersPage = () => {
 
   const handleDateSelect = (date: Date, dayOrders: Order[]) => {
     setSelectedDate(date);
-    // Ensure dayOrders match our Order interface
-    const typedOrders: Order[] = dayOrders.map(order => ({
+    // Ensure dayOrders match our Order interface and have required properties
+    const typedOrders: Order[] = dayOrders.filter(order => order && order.customerName).map(order => ({
       ...order,
+      customerName: order.customerName || 'Unknown Customer',
       customerPhone: order.customerPhone || '',
       advanceAmount: order.advanceAmount || 0,
       remainingAmount: order.remainingAmount || 0,
@@ -464,25 +472,29 @@ const OrdersPage = () => {
       {renderContent()}
 
       {/* Modals */}
-      <OrderDetailsModal
-        isOpen={isDetailsModalOpen}
-        onClose={() => {
-          setIsDetailsModalOpen(false);
-          setSelectedOrder(null);
-        }}
-        order={selectedOrder}
-        onWhatsAppClick={handleSendWhatsApp}
-        onRefresh={handleRefresh}
-      />
+      {selectedOrder && (
+        <OrderDetailsModal
+          isOpen={isDetailsModalOpen}
+          onClose={() => {
+            setIsDetailsModalOpen(false);
+            setSelectedOrder(null);
+          }}
+          order={selectedOrder}
+          onWhatsAppClick={handleSendWhatsApp}
+          onRefresh={handleRefresh}
+        />
+      )}
 
-      <WhatsAppMessageModal
-        isOpen={isWhatsAppModalOpen}
-        onClose={() => {
-          setIsWhatsAppModalOpen(false);
-          setSelectedOrder(null);
-        }}
-        order={selectedOrder}
-      />
+      {selectedOrder && (
+        <WhatsAppMessageModal
+          isOpen={isWhatsAppModalOpen}
+          onClose={() => {
+            setIsWhatsAppModalOpen(false);
+            setSelectedOrder(null);
+          }}
+          order={selectedOrder}
+        />
+      )}
 
       <CreateOrderModal
         isOpen={isCreateModalOpen}
