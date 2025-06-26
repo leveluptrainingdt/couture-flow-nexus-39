@@ -18,8 +18,6 @@ interface Order {
   itemType: string;
   orderDate: string;
   deliveryDate: string;
-  totalAmount: number;
-  remainingAmount: number;
   status: string;
   quantity: number;
   items?: any[];
@@ -107,14 +105,14 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
           return (
             <Card 
               key={order.id} 
-              className="hover:shadow-lg transition-all duration-200 border border-gray-200 rounded-xl shadow-sm"
+              className="hover:shadow-lg transition-all duration-200 border border-gray-200 rounded-xl shadow-sm hover:shadow-xl"
             >
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start">
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center space-x-2">
                       <span className="font-bold text-lg">#{order.orderNumber.slice(-4)}</span>
-                      <Badge className={getStatusColor(order.status)} variant="outline">
+                      <Badge className={`${getStatusColor(order.status)} font-medium`} variant="outline">
                         {order.status}
                       </Badge>
                     </div>
@@ -136,7 +134,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                     <Package className="h-4 w-4 mr-2 flex-shrink-0" />
                     <span className="truncate flex-1">{order.itemType}</span>
                     {order.quantity > 1 && (
-                      <Badge variant="outline" className="text-xs ml-2 flex-shrink-0">
+                      <Badge variant="outline" className="text-xs ml-2 flex-shrink-0 bg-blue-50 text-blue-600">
                         Qty: {order.quantity}
                       </Badge>
                     )}
@@ -148,7 +146,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                       <User className="h-4 w-4 mr-2 mt-0.5 text-purple-600 flex-shrink-0" />
                       <div className="flex flex-wrap gap-1 min-w-0 flex-1">
                         {madeForItems.map((person, index) => (
-                          <Badge key={index} variant="outline" className="text-purple-600 text-xs truncate max-w-full">
+                          <Badge key={index} variant="outline" className="text-purple-600 bg-purple-50 text-xs truncate max-w-full">
                             {person}
                           </Badge>
                         ))}
@@ -162,21 +160,6 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                   </div>
                 </div>
 
-                {/* Payment Information */}
-                <div className="border-t pt-3 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Total Amount:</span>
-                    <span className="font-bold">₹{order.totalAmount?.toLocaleString() || 0}</span>
-                  </div>
-                  
-                  {order.remainingAmount > 0 && (
-                    <div className="flex justify-between items-center text-red-600">
-                      <span className="text-sm font-medium">Balance Due:</span>
-                      <span className="font-bold">₹{order.remainingAmount.toLocaleString()}</span>
-                    </div>
-                  )}
-                </div>
-
                 {/* Action Buttons - Mobile-optimized layout */}
                 <div className="pt-2 space-y-2">
                   {/* First Row - Primary Actions */}
@@ -185,7 +168,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                       size="sm"
                       variant="outline"
                       onClick={() => handleViewOrder(order)}
-                      className="text-xs flex items-center justify-center"
+                      className="text-xs flex items-center justify-center hover:bg-blue-50 hover:border-blue-200 transition-colors"
                       title="View Order"
                     >
                       <Eye className="h-3 w-3 sm:mr-1" />
@@ -196,7 +179,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                       size="sm"
                       variant="outline"
                       onClick={() => handleEditOrder(order)}
-                      className="text-xs flex items-center justify-center"
+                      className="text-xs flex items-center justify-center hover:bg-green-50 hover:border-green-200 transition-colors"
                       title="Edit Order"
                     >
                       <Edit className="h-3 w-3 sm:mr-1" />
@@ -207,7 +190,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                       size="sm"
                       variant="outline"
                       onClick={() => handleDeleteClick(order)}
-                      className="text-red-600 hover:bg-red-50 text-xs flex items-center justify-center"
+                      className="text-red-600 hover:bg-red-50 hover:border-red-200 text-xs flex items-center justify-center transition-colors"
                       title="Delete Order"
                     >
                       <Trash2 className="h-3 w-3 sm:mr-1" />
@@ -221,7 +204,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                       size="sm"
                       variant="outline"
                       onClick={() => handleSendWhatsApp(order)}
-                      className="text-green-600 hover:bg-green-50 text-xs flex items-center justify-center"
+                      className="text-green-600 hover:bg-green-50 hover:border-green-200 text-xs flex items-center justify-center transition-colors"
                       title="Send WhatsApp"
                     >
                       <MessageSquare className="h-3 w-3 sm:mr-1" />
@@ -233,7 +216,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                         size="sm"
                         variant="outline"
                         onClick={() => handleBillOrder(order)}
-                        className="text-purple-600 hover:bg-purple-50 text-xs flex items-center justify-center"
+                        className="text-purple-600 hover:bg-purple-50 hover:border-purple-200 text-xs flex items-center justify-center transition-colors"
                         title="Generate Bill"
                       >
                         <Receipt className="h-3 w-3 sm:mr-1" />
@@ -244,7 +227,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="md:hidden text-xs flex items-center justify-center"
+                      className="md:hidden text-xs flex items-center justify-center hover:bg-blue-50 hover:border-blue-200 transition-colors"
                       onClick={() => window.open(`tel:${order.customerPhone}`)}
                       title="Call Customer"
                     >

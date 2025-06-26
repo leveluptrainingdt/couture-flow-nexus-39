@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -13,8 +13,8 @@ interface OrdersFiltersProps {
   setSearchTerm: (term: string) => void;
   statusFilter: string;
   setStatusFilter: (status: string) => void;
-  dateFilter: { from?: Date; to?: Date };
-  setDateFilter: (filter: { from?: Date; to?: Date }) => void;
+  dateFilter: { from?: Date; to?: Date; single?: Date };
+  setDateFilter: (filter: { from?: Date; to?: Date; single?: Date }) => void;
 }
 
 const OrdersFilters: React.FC<OrdersFiltersProps> = ({
@@ -25,9 +25,37 @@ const OrdersFilters: React.FC<OrdersFiltersProps> = ({
   dateFilter,
   setDateFilter
 }) => {
+  const [dateMode, setDateMode] = useState<'single' | 'range'>('single');
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+
   const clearDateFilter = () => {
     setDateFilter({});
+    setIsDatePickerOpen(false);
   };
+
+  const handleDateSelect = (date: Date | { from?: Date; to?: Date } | undefined) => {
+    if (dateMode === 'single') {
+      setDateFilter({ single: date as Date });
+    } else {
+      const range = date as { from?: Date; to?: Date };
+      setDateFilter({ from: range?.from, to: range?.to });
+    }
+  };
+
+  const getDateDisplayText = () => {
+    if (dateFilter.single) {
+      return format(dateFilter.single, "MMM dd, yyyy");
+    }
+    if (dateFilter.from && dateFilter.to) {
+      return `${format(dateFilter.from, "MMM dd")} - ${format(dateFilter.to, "MMM dd")}`;
+    }
+    if (dateFilter.from) {
+      return `From ${format(dateFilter.from, "MMM dd, yyyy")}`;
+    }
+    return "Pick date";
+  };
+
+  const hasDateFilter = dateFilter.single || dateFilter.from || dateFilter.to;
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
@@ -56,22 +84,15 @@ const OrdersFilters: React.FC<OrdersFiltersProps> = ({
           </SelectContent>
         </Select>
 
-        <Popover>
+        <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
           <PopoverTrigger asChild>
-            <Button variant="outline" className="w-full sm:w-60 justify-start">
+            <Button 
+              variant="outline" 
+              className={`w-full sm:w-60 justify-start ${hasDateFilter ? 'bg-blue-50 border-blue-200' : ''}`}
+            >
               <CalendarIcon className="mr-2 h-4 w-4" />
-              {dateFilter.from ? (
-                dateFilter.to ? (
-                  <>
-                    {format(dateFilter.from, "MMM dd")} - {format(dateFilter.to, "MMM dd")}
-                  </>
-                ) : (
-                  format(dateFilter.from, "MMM dd, yyyy")
-                )
-              ) : (
-                <span>Pick date range (Order/Delivery)</span>
-              )}
-              {(dateFilter.from || dateFilter.to) && (
+              {hasDateFilter ? getDateDisplayText() : "Pick date"}
+              {hasDateFilter && (
                 <X 
                   className="ml-auto h-4 w-4 hover:text-red-500" 
                   onClick={(e) => {
@@ -84,24 +105,56 @@ const OrdersFilters: React.FC<OrdersFiltersProps> = ({
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="end">
             <div className="p-3 border-b">
-              <p className="text-sm text-gray-600">
-                Filter by Order Date or Delivery Date within this range
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium">Date Filter Mode</p>
+                <div className="flex rounded-md border">
+                  <Button
+                    variant={dateMode === 'single' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setDateMode('single')}
+                    className="rounded-r-none text-xs"
+                  >
+                    Single
+                  </Button>
+                  <Button
+                    variant={dateMode === 'range' ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setDateMode('range')}
+                    className="rounded-l-none text-xs"
+                  >
+                    Range
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-gray-600">
+                Filter by Order Date or Delivery Date
               </p>
             </div>
             <Calendar
-              mode="range"
-              selected={{
-                from: dateFilter.from,
-                to: dateFilter.to
-              }}
-              onSelect={(range) => {
-                setDateFilter({
-                  from: range?.from,
-                  to: range?.to
-                });
-              }}
-              numberOfMonths={2}
+              mode={dateMode === 'single' ? 'single' : 'range'}
+              selected={dateMode === 'single' ? dateFilter.single : { from: dateFilter.from, to: dateFilter.to }}
+              onSelect={handleDateSelect}
+              numberOfMonths={dateMode === 'range' ? 2 : 1}
             />
+            <div className="p-3 border-t">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearDateFilter}
+                  className="flex-1"
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setIsDatePickerOpen(false)}
+                  className="flex-1"
+                >
+                  Apply
+                </Button>
+              </div>
+            </div>
           </PopoverContent>
         </Popover>
       </div>

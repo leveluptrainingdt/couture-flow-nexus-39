@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, Package, AlertCircle, Grid, List, Calendar as CalendarIcon, ArrowLeft, Clock, Truck } from 'lucide-react';
+import { Plus, Grid, List, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
 import { collection, onSnapshot, query, orderBy, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
@@ -21,9 +21,6 @@ interface OrderItem {
   madeFor: string;
   category: string;
   description: string;
-  totalAmount: number;
-  advanceAmount: number;
-  balance: number;
   quantity: number;
   status: string;
   orderDate: string;
@@ -32,6 +29,7 @@ interface OrderItem {
   requiredMaterials: any[];
   designImages: string[];
   notes: string;
+  sizes?: Record<string, string>;
 }
 
 interface Order {
@@ -44,9 +42,6 @@ interface Order {
   itemType: string;
   orderDate: string;
   deliveryDate: string;
-  totalAmount: number;
-  advanceAmount: number;
-  remainingAmount: number;
   quantity: number;
   status: 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled';
   measurements?: Record<string, string>;
@@ -57,23 +52,19 @@ interface Order {
 }
 
 const OrdersPage = () => {
-  console.log('OrdersPage component rendering...');
-  
   const { userData } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<{ from?: Date; to?: Date }>({});
+  const [dateFilter, setDateFilter] = useState<{ from?: Date; to?: Date; single?: Date }>({});
   
-  // Persistent view preferences with localStorage
   const [view, setView] = useState<'grid' | 'list' | 'calendar'>(() => {
     try {
       const saved = localStorage.getItem('orders-view');
       return (saved as 'grid' | 'list' | 'calendar') || 'grid';
     } catch (e) {
-      console.warn('Error reading from localStorage:', e);
       return 'grid';
     }
   });
@@ -83,19 +74,7 @@ const OrdersPage = () => {
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [calendarOrders, setCalendarOrders] = useState<Order[]>([]);
-  const [calendarViewMode, setCalendarViewMode] = useState<'grid' | 'list'>('grid');
 
-  console.log('Current state:', { 
-    loading, 
-    error, 
-    ordersCount: orders.length, 
-    userData: !!userData,
-    view 
-  });
-
-  // Save view preference to localStorage whenever it changes
   useEffect(() => {
     try {
       localStorage.setItem('orders-view', view);
@@ -105,27 +84,19 @@ const OrdersPage = () => {
   }, [view]);
 
   useEffect(() => {
-    console.log('Effect running - userData:', !!userData);
-    
     if (!userData) {
-      console.log('No userData, setting loading to false');
       setLoading(false);
       setError('User not authenticated');
       return;
     }
     
-    console.log('Setting up orders listener...');
-    
     try {
       const unsubscribe = onSnapshot(
         query(collection(db, 'orders'), orderBy('createdAt', 'desc')),
         (snapshot) => {
-          console.log('Firestore snapshot received, docs count:', snapshot.docs.length);
-          
           try {
             const ordersData = snapshot.docs.map(doc => {
               const data = doc.data();
-              console.log('Processing order doc:', doc.id, data);
               
               return {
                 id: doc.id,
@@ -137,9 +108,6 @@ const OrdersPage = () => {
                 itemType: data.dressType || data.itemType || 'Unknown Item',
                 orderDate: data.orderDate || data.createdAt?.toDate?.()?.toLocaleDateString() || new Date().toLocaleDateString(),
                 deliveryDate: data.deliveryDate || '',
-                totalAmount: data.totalAmount || 0,
-                advanceAmount: data.advanceAmount || 0,
-                remainingAmount: data.balance || data.remainingAmount || 0,
                 quantity: data.items?.length || data.quantity || 1,
                 status: data.status || 'received',
                 measurements: data.measurements || {},
@@ -148,9 +116,8 @@ const OrdersPage = () => {
                 assignedStaff: data.assignedStaff || [],
                 requiredMaterials: data.requiredMaterials || []
               } as Order;
-            }).filter(order => order && order.customerName); // Filter out any invalid orders
+            }).filter(order => order && order.customerName && order.customerName !== 'Unknown Customer');
             
-            console.log('Processed orders data:', ordersData);
             setOrders(ordersData);
             setLoading(false);
             setError(null);
@@ -167,10 +134,7 @@ const OrdersPage = () => {
         }
       );
 
-      return () => {
-        console.log('Cleaning up orders listener');
-        unsubscribe();
-      };
+      return () => unsubscribe();
     } catch (error) {
       console.error('Error setting up orders listener:', error);
       setError('Failed to initialize orders listener');
@@ -178,10 +142,7 @@ const OrdersPage = () => {
     }
   }, [userData]);
 
-  console.log('Before render checks - loading:', loading, 'error:', error);
-
   if (error && !loading) {
-    console.log('Rendering error state');
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Card className="w-full max-w-md">
@@ -201,21 +162,24 @@ const OrdersPage = () => {
   }
 
   if (loading) {
-    console.log('Rendering loading state');
     return <LoadingSpinner type="page" />;
   }
 
-  console.log('Processing orders for display...');
   const safeOrders = Array.isArray(orders) ? orders.filter(order => order && order.customerName) : [];
-  console.log('Safe orders count:', safeOrders.length);
   
-  // Date filtering logic with null checks
+  // Enhanced date filtering with single date and range support
   const dateFilteredOrders = safeOrders.filter(order => {
     if (!order) return false;
-    if (!dateFilter.from && !dateFilter.to) return true;
+    if (!dateFilter.from && !dateFilter.to && !dateFilter.single) return true;
     
     const orderDate = new Date(order.orderDate);
     const deliveryDate = new Date(order.deliveryDate);
+    
+    if (dateFilter.single) {
+      const targetDate = dateFilter.single;
+      const targetDateStr = targetDate.toDateString();
+      return orderDate.toDateString() === targetDateStr || deliveryDate.toDateString() === targetDateStr;
+    }
     
     if (dateFilter.from && dateFilter.to) {
       return (orderDate >= dateFilter.from && orderDate <= dateFilter.to) ||
@@ -249,32 +213,34 @@ const OrdersPage = () => {
     return matchesSearch && matchesStatus;
   });
 
-  console.log('Filtered orders count:', filteredOrders.length);
-
-  // Calculate stats for OrdersStats component
+  // Calculate enhanced stats
+  const today = new Date();
+  const fiveDaysFromNow = new Date(today.getTime() + (5 * 24 * 60 * 60 * 1000));
+  
   const stats = {
     total: safeOrders.length,
-    revenue: safeOrders.filter(order => order && order.status === 'delivered').reduce((sum, order) => sum + (order.totalAmount || 0), 0),
     pending: safeOrders.filter(order => order && order.status === 'received').length,
-    inProgress: safeOrders.filter(order => order && order.status === 'in-progress').length
+    inProgress: safeOrders.filter(order => order && order.status === 'in-progress').length,
+    ready: safeOrders.filter(order => order && order.status === 'ready').length,
+    deliveryDeadline: safeOrders.filter(order => {
+      if (!order || !order.deliveryDate) return false;
+      const deliveryDate = new Date(order.deliveryDate);
+      return deliveryDate <= fiveDaysFromNow && deliveryDate >= today;
+    }).length
   };
 
-  // New Bill functionality
   const handleBillOrder = async (order: Order) => {
     if (!order || !order.customerName) return;
     
     try {
-      // Check if bill already exists for this order
       const billsSnapshot = await getDocs(collection(db, 'bills'));
       const existingBill = billsSnapshot.docs.find(doc => 
         doc.data().orderId === order.id || doc.data().orderNumber === order.orderNumber
       );
 
       if (existingBill) {
-        // Navigate to existing bill
         window.location.href = `/billing/${existingBill.id}`;
       } else {
-        // Create new bill
         const billData = {
           billId: `BILL${Date.now().toString().slice(-6)}`,
           customerId: order.id,
@@ -286,12 +252,12 @@ const OrdersPage = () => {
           items: order.items || [{
             description: order.itemType,
             quantity: order.quantity,
-            rate: order.totalAmount / order.quantity,
-            amount: order.totalAmount
+            rate: 0,
+            amount: 0
           }],
-          totalAmount: order.totalAmount,
-          paidAmount: order.advanceAmount,
-          balance: order.remainingAmount,
+          totalAmount: 0,
+          paidAmount: 0,
+          balance: 0,
           date: new Date(),
           createdAt: serverTimestamp()
         };
@@ -303,7 +269,6 @@ const OrdersPage = () => {
           description: "Bill created successfully",
         });
         
-        // Navigate to new bill
         window.location.href = `/billing/${docRef.id}`;
       }
     } catch (error) {
@@ -341,29 +306,13 @@ const OrdersPage = () => {
     });
   };
 
-  const handleDateSelect = (date: Date, dayOrders: Order[]) => {
-    setSelectedDate(date);
-    // Ensure dayOrders match our Order interface and have required properties
-    const typedOrders: Order[] = dayOrders.filter(order => order && order.customerName).map(order => ({
-      ...order,
-      customerName: order.customerName || 'Unknown Customer',
-      customerPhone: order.customerPhone || '',
-      advanceAmount: order.advanceAmount || 0,
-      remainingAmount: order.remainingAmount || 0,
-      quantity: order.quantity || 1
-    }));
-    setCalendarOrders(typedOrders);
-  };
-
   const renderContent = () => {
-    console.log('Rendering content for view:', view);
-    
     try {
       if (view === 'calendar') {
         return (
           <OrdersCalendarView
             orders={filteredOrders}
-            onDateSelect={handleDateSelect}
+            onDateSelect={() => {}}
           />
         );
       }
@@ -402,8 +351,6 @@ const OrdersPage = () => {
       );
     }
   };
-
-  console.log('Rendering main component');
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -455,10 +402,10 @@ const OrdersPage = () => {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Enhanced Stats */}
       <OrdersStats stats={stats} />
 
-      {/* Filters */}
+      {/* Enhanced Filters */}
       <OrdersFilters
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
