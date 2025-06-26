@@ -256,7 +256,7 @@ const OrdersPage = () => {
   const renderContent = () => {
     try {
       if (view === 'calendar') {
-        // Transform orders to match OrderCalendar expected format
+        // Transform orders to include payment properties for OrderCalendar compatibility
         const calendarOrders = filteredOrders.map(order => ({
           ...order,
           totalAmount: 0,

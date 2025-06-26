@@ -4,18 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Package, Phone, MessageSquare, Eye } from 'lucide-react';
-
-interface Order {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerPhone: string;
-  status: string;
-  orderDate: string;
-  deliveryDate: string;
-  totalAmount: number;
-  remainingAmount: number;
-}
+import { Order } from '@/components/orders/OrdersPage';
 
 interface OrderGridViewProps {
   orders: Order[];
@@ -99,11 +88,6 @@ const OrderGridView: React.FC<OrderGridViewProps> = ({
             <div className="text-sm text-gray-500">{order.orderDate}</div>
           </CardHeader>
           <CardContent>
-            {order.remainingAmount > 0 && (
-              <div className="text-red-600 font-medium mb-2">
-                Balance: ₹{order.remainingAmount.toLocaleString()}
-              </div>
-            )}
             <div className="flex space-x-2">
               <Button
                 size="sm"
