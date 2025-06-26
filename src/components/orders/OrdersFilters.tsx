@@ -69,7 +69,7 @@ const OrdersFilters: React.FC<OrdersFiltersProps> = ({
                   format(dateFilter.from, "MMM dd, yyyy")
                 )
               ) : (
-                <span>Pick date range</span>
+                <span>Pick date range (Order/Delivery)</span>
               )}
               {(dateFilter.from || dateFilter.to) && (
                 <X 
@@ -83,6 +83,11 @@ const OrdersFilters: React.FC<OrdersFiltersProps> = ({
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="end">
+            <div className="p-3 border-b">
+              <p className="text-sm text-gray-600">
+                Filter by Order Date or Delivery Date within this range
+              </p>
+            </div>
             <Calendar
               mode="range"
               selected={{
