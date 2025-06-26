@@ -70,7 +70,7 @@ const DesignCanvas: React.FC<DesignCanvasProps> = ({
 
     // Load initial image if provided
     if (initialImage) {
-      fabric.Image.fromURL(initialImage, (img) => {
+      fabric.Image.fromURL(initialImage).then((img) => {
         canvas.add(img);
         canvas.renderAll();
       });
