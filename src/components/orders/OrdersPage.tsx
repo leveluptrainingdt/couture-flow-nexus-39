@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Plus, Package, AlertCircle, Grid, List, Calendar as CalendarIcon, ArrowLeft, Clock, Truck } from 'lucide-react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import OrderDetailsModal from '@/components/OrderDetailsModal';
@@ -62,7 +61,10 @@ const OrdersPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<{ from?: Date; to?: Date }>({});
-  const [view, setView] = useState<'grid' | 'list' | 'calendar'>('grid');
+  const [view, setView] = useState<'grid' | 'list' | 'calendar'>(() => {
+    const saved = localStorage.getItem('orders-view');
+    return (saved as 'grid' | 'list' | 'calendar') || 'grid';
+  });
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
@@ -71,6 +73,11 @@ const OrdersPage = () => {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [calendarOrders, setCalendarOrders] = useState<Order[]>([]);
   const [calendarViewMode, setCalendarViewMode] = useState<'grid' | 'list'>('grid');
+
+  // Save view preference to localStorage
+  useEffect(() => {
+    localStorage.setItem('orders-view', view);
+  }, [view]);
 
   useEffect(() => {
     if (!userData) {
@@ -188,6 +195,88 @@ const OrdersPage = () => {
     
     return matchesSearch && matchesStatus;
   });
+
+  // New Bill functionality
+  const handleBillOrder = async (order: Order) => {
+    if (!order) return;
+    
+    try {
+      // Check if bill already exists for this order
+      const billsSnapshot = await getDocs(collection(db, 'bills'));
+      const existingBill = billsSnapshot.docs.find(doc => 
+        doc.data().orderId === order.id || doc.data().orderNumber === order.orderNumber
+      );
+
+      if (existingBill) {
+        // Navigate to existing bill
+        window.location.href = `/billing/${existingBill.id}`;
+      } else {
+        // Create new bill
+        const billData = {
+          billId: `BILL${Date.now().toString().slice(-6)}`,
+          customerId: order.id,
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          customerEmail: order.customerEmail || '',
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          items: order.items?.map(item => ({
+            id: `item-${Date.now()}-${Math.random()}`,
+            description: `${item.category} - ${item.description || 'Custom Order'}`,
+            quantity: item.quantity,
+            rate: item.totalAmount,
+            amount: item.totalAmount * item.quantity,
+            chargeType: 'item'
+          })) || [{
+            id: `item-${Date.now()}`,
+            description: `${order.itemType} - Custom Order`,
+            quantity: order.quantity,
+            rate: order.totalAmount,
+            amount: order.totalAmount,
+            chargeType: 'item'
+          }],
+          breakdown: {
+            fabric: 0,
+            stitching: 0,
+            accessories: 0,
+            customization: 0,
+            otherCharges: 0
+          },
+          subtotal: order.totalAmount,
+          gstPercent: 0,
+          gstAmount: 0,
+          discount: 0,
+          discountType: 'amount',
+          totalAmount: order.totalAmount,
+          paidAmount: order.advanceAmount || 0,
+          balance: order.remainingAmount || 0,
+          status: order.remainingAmount > 0 ? 'partial' : order.advanceAmount > 0 ? 'paid' : 'unpaid',
+          date: serverTimestamp(),
+          bankDetails: {
+            accountName: 'Swetha\'s Couture',
+            accountNumber: '',
+            ifsc: '',
+            bankName: ''
+          },
+          upiId: '',
+          upiLink: '',
+          qrCodeUrl: '',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+
+        const docRef = await addDoc(collection(db, 'bills'), billData);
+        window.location.href = `/billing/${docRef.id}`;
+      }
+    } catch (error) {
+      console.error('Error handling bill:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create/open bill",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Enhanced stats with new categories
   const today = new Date();
@@ -476,6 +565,7 @@ const OrdersPage = () => {
               handleViewOrder={handleViewOrder}
               handleEditOrder={handleEditOrder}
               handleSendWhatsApp={handleSendWhatsApp}
+              handleBillOrder={handleBillOrder}
               onRefresh={refreshOrders}
             />
           ) : (
@@ -484,6 +574,7 @@ const OrdersPage = () => {
               handleViewOrder={handleViewOrder}
               handleEditOrder={handleEditOrder}
               handleSendWhatsApp={handleSendWhatsApp}
+              handleBillOrder={handleBillOrder}
               onRefresh={refreshOrders}
             />
           )}
@@ -499,6 +590,7 @@ const OrdersPage = () => {
           handleViewOrder={handleViewOrder}
           handleEditOrder={handleEditOrder}
           handleSendWhatsApp={handleSendWhatsApp}
+          handleBillOrder={handleBillOrder}
           onRefresh={refreshOrders}
         />
       ) : (
@@ -507,11 +599,12 @@ const OrdersPage = () => {
           handleViewOrder={handleViewOrder}
           handleEditOrder={handleEditOrder}
           handleSendWhatsApp={handleSendWhatsApp}
+          handleBillOrder={handleBillOrder}
           onRefresh={refreshOrders}
         />
       )}
 
-      {/* Modals */}
+      {/* Enhanced Modals */}
       {selectedOrder && (
         <>
           <OrderDetailsModal
@@ -522,6 +615,8 @@ const OrdersPage = () => {
               setSelectedOrder(null);
             }}
             onWhatsAppClick={() => handleSendWhatsApp(selectedOrder)}
+            onEditClick={() => handleEditOrder(selectedOrder)}
+            onBillClick={() => handleBillOrder(selectedOrder)}
             onRefresh={refreshOrders}
           />
           <WhatsAppMessageModal

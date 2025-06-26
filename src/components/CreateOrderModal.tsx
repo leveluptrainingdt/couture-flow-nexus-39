@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,8 @@ interface Staff {
   name: string;
   phone: string;
   photo?: string;
+  role?: string;
+  activeOrdersCount?: number;
 }
 
 interface Material {
@@ -34,7 +37,9 @@ interface OrderItem {
   madeFor: string;
   category: string;
   description: string;
-  price: number;
+  totalAmount: number;
+  advanceAmount: number;
+  balance: number;
   quantity: number;
   status: string;
   orderDate: string;
@@ -98,14 +103,33 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
     setValue('customerEmail', editingOrder.customerEmail || '');
 
     if (editingOrder.items && editingOrder.items.length > 0) {
-      setOrderItems(editingOrder.items);
+      // Convert items to new structure with payment fields
+      const convertedItems = editingOrder.items.map((item: any) => ({
+        madeFor: item.madeFor || editingOrder.customerName || '',
+        category: item.category || '',
+        description: item.description || '',
+        totalAmount: item.totalAmount || item.price || 0,
+        advanceAmount: item.advanceAmount || 0,
+        balance: (item.totalAmount || item.price || 0) - (item.advanceAmount || 0),
+        quantity: item.quantity || 1,
+        status: item.status || 'received',
+        orderDate: item.orderDate || new Date().toISOString().split('T')[0],
+        deliveryDate: item.deliveryDate || '',
+        assignedStaff: item.assignedStaff || [],
+        requiredMaterials: item.requiredMaterials || [],
+        designImages: item.designImages || [],
+        notes: item.notes || ''
+      }));
+      setOrderItems(convertedItems);
     } else {
       // Convert single order to item format for backward compatibility
       const singleItem: OrderItem = {
         madeFor: editingOrder.customerName || '',
         category: editingOrder.itemType || '',
         description: '',
-        price: editingOrder.totalAmount || 0,
+        totalAmount: editingOrder.totalAmount || 0,
+        advanceAmount: editingOrder.advanceAmount || 0,
+        balance: (editingOrder.totalAmount || 0) - (editingOrder.advanceAmount || 0),
         quantity: editingOrder.quantity || 1,
         status: editingOrder.status || 'received',
         orderDate: editingOrder.orderDate || new Date().toISOString().split('T')[0],
@@ -125,7 +149,9 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
       madeFor: '',
       category: '',
       description: '',
-      price: 0,
+      totalAmount: 0,
+      advanceAmount: 0,
+      balance: 0,
       quantity: 1,
       status: 'received',
       orderDate: new Date().toISOString().split('T')[0],
@@ -139,12 +165,25 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
 
   const fetchData = async () => {
     try {
-      // Fetch staff
+      // Fetch staff with active orders count
       const staffSnapshot = await getDocs(collection(db, 'staff'));
-      const staffData = staffSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Staff[];
+      const ordersSnapshot = await getDocs(collection(db, 'orders'));
+      
+      const staffData = staffSnapshot.docs.map(doc => {
+        const data = doc.data();
+        const activeOrdersCount = ordersSnapshot.docs.filter(orderDoc => {
+          const orderData = orderDoc.data();
+          return orderData.assignedStaff?.includes(doc.id) && 
+                 orderData.status !== 'delivered' && 
+                 orderData.status !== 'cancelled';
+        }).length;
+        
+        return {
+          id: doc.id,
+          ...data,
+          activeOrdersCount
+        };
+      }) as Staff[];
       setStaff(staffData);
 
       // Fetch materials/inventory
@@ -185,7 +224,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
     // Validate each item
     for (let i = 0; i < orderItems.length; i++) {
       const item = orderItems[i];
-      if (!item.madeFor || !item.category || !item.deliveryDate || item.price <= 0) {
+      if (!item.madeFor || !item.category || !item.deliveryDate || item.totalAmount <= 0) {
         toast({
           title: "Error",
           description: `Please complete all required fields for item ${i + 1}`,
@@ -197,7 +236,9 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
 
     setLoading(true);
     try {
-      const totalAmount = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const totalAmount = orderItems.reduce((sum, item) => sum + (item.totalAmount * item.quantity), 0);
+      const totalAdvance = orderItems.reduce((sum, item) => sum + (item.advanceAmount * item.quantity), 0);
+      const totalBalance = totalAmount - totalAdvance;
       const totalQuantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
 
       const baseOrderData = {
@@ -211,9 +252,9 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
         quantity: totalQuantity,
         status: orderItems[0]?.status || 'received',
         totalAmount: totalAmount,
-        advanceAmount: 0,
-        balance: totalAmount,
-        remainingAmount: totalAmount,
+        advanceAmount: totalAdvance,
+        balance: totalBalance,
+        remainingAmount: totalBalance,
         orderDate: orderItems[0]?.orderDate || new Date().toISOString().split('T')[0],
         deliveryDate: orderItems[0]?.deliveryDate || '',
         notes: orderItems.map(item => item.notes).filter(Boolean).join('\n'),
