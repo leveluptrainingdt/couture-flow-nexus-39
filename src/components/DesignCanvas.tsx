@@ -3,7 +3,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Canvas as FabricCanvas, Circle, Rect, PencilBrush } from 'fabric';
+import { Canvas as FabricCanvas, Circle, Rect, PencilBrush, util } from 'fabric';
+import * as fabric from 'fabric';
 import { 
   Palette, 
   Pen, 
@@ -185,7 +186,8 @@ const DesignCanvas: React.FC<DesignCanvasProps> = ({
       // Convert canvas to blob
       const dataURL = fabricCanvas.toDataURL({
         format: 'png',
-        quality: 0.8
+        quality: 0.8,
+        multiplier: 1
       });
       
       // Convert dataURL to blob
