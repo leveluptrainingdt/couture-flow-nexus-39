@@ -20,7 +20,9 @@ interface OrderItem {
   madeFor: string;
   category: string;
   description: string;
-  price: number;
+  totalAmount: number;
+  advanceAmount: number;
+  balance: number;
   quantity: number;
   status: string;
   orderDate: string;
