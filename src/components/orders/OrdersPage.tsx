@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -57,6 +56,8 @@ interface Order {
 }
 
 const OrdersPage = () => {
+  console.log('OrdersPage component rendering...');
+  
   const { userData } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,8 +68,13 @@ const OrdersPage = () => {
   
   // Persistent view preferences with localStorage
   const [view, setView] = useState<'grid' | 'list' | 'calendar'>(() => {
-    const saved = localStorage.getItem('orders-view');
-    return (saved as 'grid' | 'list' | 'calendar') || 'grid';
+    try {
+      const saved = localStorage.getItem('orders-view');
+      return (saved as 'grid' | 'list' | 'calendar') || 'grid';
+    } catch (e) {
+      console.warn('Error reading from localStorage:', e);
+      return 'grid';
+    }
   });
   
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -80,67 +86,101 @@ const OrdersPage = () => {
   const [calendarOrders, setCalendarOrders] = useState<Order[]>([]);
   const [calendarViewMode, setCalendarViewMode] = useState<'grid' | 'list'>('grid');
 
+  console.log('Current state:', { 
+    loading, 
+    error, 
+    ordersCount: orders.length, 
+    userData: !!userData,
+    view 
+  });
+
   // Save view preference to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem('orders-view', view);
+    try {
+      localStorage.setItem('orders-view', view);
+    } catch (e) {
+      console.warn('Error saving to localStorage:', e);
+    }
   }, [view]);
 
   useEffect(() => {
+    console.log('Effect running - userData:', !!userData);
+    
     if (!userData) {
+      console.log('No userData, setting loading to false');
       setLoading(false);
       setError('User not authenticated');
       return;
     }
     
-    const unsubscribe = onSnapshot(
-      query(collection(db, 'orders'), orderBy('createdAt', 'desc')),
-      (snapshot) => {
-        try {
-          const ordersData = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              orderNumber: data.orderId || data.orderNumber || `ORD-${doc.id.slice(-6)}`,
-              customerName: data.customerName || '',
-              customerPhone: data.customerPhone || '',
-              customerEmail: data.customerEmail || '',
-              items: data.items || [],
-              itemType: data.dressType || data.itemType || '',
-              orderDate: data.orderDate || data.createdAt?.toDate?.()?.toLocaleDateString() || new Date().toLocaleDateString(),
-              deliveryDate: data.deliveryDate || '',
-              totalAmount: data.totalAmount || 0,
-              advanceAmount: data.advanceAmount || 0,
-              remainingAmount: data.balance || data.remainingAmount || 0,
-              quantity: data.items?.length || data.quantity || 1,
-              status: data.status || 'received',
-              measurements: data.measurements || {},
-              notes: data.notes || '',
-              designImages: data.designImages || [],
-              assignedStaff: data.assignedStaff || [],
-              requiredMaterials: data.requiredMaterials || []
-            } as Order;
-          });
+    console.log('Setting up orders listener...');
+    
+    try {
+      const unsubscribe = onSnapshot(
+        query(collection(db, 'orders'), orderBy('createdAt', 'desc')),
+        (snapshot) => {
+          console.log('Firestore snapshot received, docs count:', snapshot.docs.length);
           
-          setOrders(ordersData);
-          setLoading(false);
-          setError(null);
-        } catch (error) {
-          console.error('Error processing orders:', error);
-          setError('Failed to process orders data');
+          try {
+            const ordersData = snapshot.docs.map(doc => {
+              const data = doc.data();
+              console.log('Processing order doc:', doc.id, data);
+              
+              return {
+                id: doc.id,
+                orderNumber: data.orderId || data.orderNumber || `ORD-${doc.id.slice(-6)}`,
+                customerName: data.customerName || '',
+                customerPhone: data.customerPhone || '',
+                customerEmail: data.customerEmail || '',
+                items: data.items || [],
+                itemType: data.dressType || data.itemType || '',
+                orderDate: data.orderDate || data.createdAt?.toDate?.()?.toLocaleDateString() || new Date().toLocaleDateString(),
+                deliveryDate: data.deliveryDate || '',
+                totalAmount: data.totalAmount || 0,
+                advanceAmount: data.advanceAmount || 0,
+                remainingAmount: data.balance || data.remainingAmount || 0,
+                quantity: data.items?.length || data.quantity || 1,
+                status: data.status || 'received',
+                measurements: data.measurements || {},
+                notes: data.notes || '',
+                designImages: data.designImages || [],
+                assignedStaff: data.assignedStaff || [],
+                requiredMaterials: data.requiredMaterials || []
+              } as Order;
+            });
+            
+            console.log('Processed orders data:', ordersData);
+            setOrders(ordersData);
+            setLoading(false);
+            setError(null);
+          } catch (error) {
+            console.error('Error processing orders:', error);
+            setError('Failed to process orders data');
+            setLoading(false);
+          }
+        },
+        (error) => {
+          console.error('Error fetching orders:', error);
+          setError('Failed to fetch orders');
           setLoading(false);
         }
-      },
-      (error) => {
-        console.error('Error fetching orders:', error);
-        setError('Failed to fetch orders');
-        setLoading(false);
-      }
-    );
+      );
 
-    return () => unsubscribe();
+      return () => {
+        console.log('Cleaning up orders listener');
+        unsubscribe();
+      };
+    } catch (error) {
+      console.error('Error setting up orders listener:', error);
+      setError('Failed to initialize orders listener');
+      setLoading(false);
+    }
   }, [userData]);
 
+  console.log('Before render checks - loading:', loading, 'error:', error);
+
   if (error && !loading) {
+    console.log('Rendering error state');
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Card className="w-full max-w-md">
@@ -160,10 +200,13 @@ const OrdersPage = () => {
   }
 
   if (loading) {
+    console.log('Rendering loading state');
     return <LoadingSpinner type="page" />;
   }
 
+  console.log('Processing orders for display...');
   const safeOrders = Array.isArray(orders) ? orders : [];
+  console.log('Safe orders count:', safeOrders.length);
   
   // Date filtering logic
   const dateFilteredOrders = safeOrders.filter(order => {
@@ -201,6 +244,8 @@ const OrdersPage = () => {
     
     return matchesSearch && matchesStatus;
   });
+
+  console.log('Filtered orders count:', filteredOrders.length);
 
   // Calculate stats for OrdersStats component
   const stats = {
@@ -283,7 +328,6 @@ const OrdersPage = () => {
   };
 
   const handleRefresh = () => {
-    // Orders are already real-time, this is just for UI feedback
     toast({
       title: "Refreshed",
       description: "Orders data is up to date",
@@ -304,18 +348,33 @@ const OrdersPage = () => {
   };
 
   const renderContent = () => {
-    if (view === 'calendar') {
-      return (
-        <OrdersCalendarView
-          orders={filteredOrders}
-          onDateSelect={handleDateSelect}
-        />
-      );
-    }
+    console.log('Rendering content for view:', view);
+    
+    try {
+      if (view === 'calendar') {
+        return (
+          <OrdersCalendarView
+            orders={filteredOrders}
+            onDateSelect={handleDateSelect}
+          />
+        );
+      }
 
-    if (view === 'grid') {
+      if (view === 'grid') {
+        return (
+          <OrdersGridView
+            filteredOrders={filteredOrders}
+            handleViewOrder={handleViewOrder}
+            handleEditOrder={handleEditOrder}
+            handleSendWhatsApp={handleSendWhatsApp}
+            handleBillOrder={handleBillOrder}
+            onRefresh={handleRefresh}
+          />
+        );
+      }
+
       return (
-        <OrdersGridView
+        <OrdersListView
           filteredOrders={filteredOrders}
           handleViewOrder={handleViewOrder}
           handleEditOrder={handleEditOrder}
@@ -324,19 +383,19 @@ const OrdersPage = () => {
           onRefresh={handleRefresh}
         />
       );
+    } catch (error) {
+      console.error('Error rendering content:', error);
+      return (
+        <div className="text-center p-8">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Error rendering content</h3>
+          <p className="text-gray-600">Please try refreshing the page</p>
+        </div>
+      );
     }
-
-    return (
-      <OrdersListView
-        filteredOrders={filteredOrders}
-        handleViewOrder={handleViewOrder}
-        handleEditOrder={handleEditOrder}
-        handleSendWhatsApp={handleSendWhatsApp}
-        handleBillOrder={handleBillOrder}
-        onRefresh={handleRefresh}
-      />
-    );
   };
+
+  console.log('Rendering main component');
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
