@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Trash2, Plus, Package, ChevronDown, ChevronRight, Upload, X, User, Calendar, DollarSign, Users, Package2 } from 'lucide-react';
+import { Trash2, Plus, Package, ChevronDown, ChevronRight, Upload, X, User, Calendar, DollarSign, Users, Package2, Palette, Minus, Eye } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { uploadToCloudinary } from '@/utils/cloudinaryConfig';
+import DesignCanvas from '@/components/DesignCanvas';
 
 interface OrderItem {
   madeFor: string;
@@ -63,6 +65,9 @@ const MultipleOrderItemsSection: React.FC<MultipleOrderItemsSectionProps> = ({
 }) => {
   const [openItems, setOpenItems] = useState<Set<number>>(new Set([0]));
   const [uploadingImages, setUploadingImages] = useState<{ [key: number]: boolean }>({});
+  const [canvasOpen, setCanvasOpen] = useState<{ [key: number]: boolean }>({});
+  const [imageViewerOpen, setImageViewerOpen] = useState<{ [key: number]: string | null }>({});
+  const [focusedFields, setFocusedFields] = useState<{ [key: string]: boolean }>({});
 
   const categories = [
     'Lehenga', 'Saree Blouse', 'Salwar Kameez', 'Kurti', 'Gown', 'Dress',
@@ -177,6 +182,25 @@ const MultipleOrderItemsSection: React.FC<MultipleOrderItemsSectionProps> = ({
     updateItem(itemIndex, 'requiredMaterials', newMaterials);
   };
 
+  const incrementMaterial = (itemIndex: number, materialId: string) => {
+    const material = materials.find(m => m.id === materialId);
+    const currentMaterial = orderItems[itemIndex].requiredMaterials.find(m => m.id === materialId);
+    const currentQty = currentMaterial?.quantity || 0;
+    
+    if (material && currentQty < material.quantity) {
+      updateMaterialRequirement(itemIndex, materialId, currentQty + 1);
+    }
+  };
+
+  const decrementMaterial = (itemIndex: number, materialId: string) => {
+    const currentMaterial = orderItems[itemIndex].requiredMaterials.find(m => m.id === materialId);
+    const currentQty = currentMaterial?.quantity || 0;
+    
+    if (currentQty > 0) {
+      updateMaterialRequirement(itemIndex, materialId, currentQty - 1);
+    }
+  };
+
   const handleImageUpload = async (itemIndex: number, files: FileList | null) => {
     if (!files || files.length === 0) return;
     
@@ -187,28 +211,35 @@ const MultipleOrderItemsSection: React.FC<MultipleOrderItemsSectionProps> = ({
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', 'ml_default'); // You'll need to set this up in Cloudinary
-        
-        const response = await fetch(
-          `https://api.cloudinary.com/v1_1/${process.env.REACT_APP_CLOUDINARY_CLOUD_NAME}/image/upload`,
-          {
-            method: 'POST',
-            body: formData,
-          }
-        );
-        
-        const data = await response.json();
-        if (data.secure_url) {
-          uploadedUrls.push(data.secure_url);
+        try {
+          const imageUrl = await uploadToCloudinary(file);
+          uploadedUrls.push(imageUrl);
+        } catch (error) {
+          console.error(`Error uploading file ${file.name}:`, error);
+          toast({
+            title: "Upload Error",
+            description: `Failed to upload ${file.name}`,
+            variant: "destructive",
+          });
         }
       }
       
-      const currentImages = orderItems[itemIndex].designImages;
-      updateItem(itemIndex, 'designImages', [...currentImages, ...uploadedUrls]);
+      if (uploadedUrls.length > 0) {
+        const currentImages = orderItems[itemIndex].designImages;
+        updateItem(itemIndex, 'designImages', [...currentImages, ...uploadedUrls]);
+        
+        toast({
+          title: "Success",
+          description: `${uploadedUrls.length} image(s) uploaded successfully`,
+        });
+      }
     } catch (error) {
       console.error('Error uploading images:', error);
+      toast({
+        title: "Error",
+        description: "Failed to upload images",
+        variant: "destructive",
+      });
     } finally {
       setUploadingImages(prev => ({ ...prev, [itemIndex]: false }));
     }
@@ -218,6 +249,27 @@ const MultipleOrderItemsSection: React.FC<MultipleOrderItemsSectionProps> = ({
     const currentImages = orderItems[itemIndex].designImages;
     const newImages = currentImages.filter((_, i) => i !== imageIndex);
     updateItem(itemIndex, 'designImages', newImages);
+  };
+
+  const handleCanvasSave = (itemIndex: number, imageUrl: string) => {
+    const currentImages = orderItems[itemIndex].designImages;
+    updateItem(itemIndex, 'designImages', [...currentImages, imageUrl]);
+    setCanvasOpen(prev => ({ ...prev, [itemIndex]: false }));
+  };
+
+  const handleFieldFocus = (fieldKey: string) => {
+    setFocusedFields(prev => ({ ...prev, [fieldKey]: true }));
+  };
+
+  const handleFieldBlur = (fieldKey: string) => {
+    setFocusedFields(prev => ({ ...prev, [fieldKey]: false }));
+  };
+
+  const getFieldValue = (value: number, fieldKey: string) => {
+    if (focusedFields[fieldKey] && value === 0) {
+      return '';
+    }
+    return value.toString();
   };
 
   const getTotalAmount = () => {
@@ -249,365 +301,426 @@ const MultipleOrderItemsSection: React.FC<MultipleOrderItemsSectionProps> = ({
         </CardHeader>
         <CardContent className="space-y-4">
           {orderItems.map((item, index) => (
-            <Collapsible 
-              key={index}
-              open={openItems.has(index)}
-              onOpenChange={() => toggleItem(index)}
-            >
-              <Card className="border-2 border-l-4 border-l-blue-500 shadow-sm">
-                <CollapsibleTrigger asChild>
-                  <CardHeader className="cursor-pointer hover:bg-gray-50 pb-3">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center space-x-3">
-                        {openItems.has(index) ? (
-                          <ChevronDown className="h-4 w-4 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-gray-500" />
-                        )}
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium">Item {index + 1}</span>
-                          {item.category && (
-                            <Badge variant="secondary">{item.category}</Badge>
+            <div key={index}>
+              <Collapsible 
+                open={openItems.has(index)}
+                onOpenChange={() => toggleItem(index)}
+              >
+                <Card className="border-2 border-l-4 border-l-blue-500 shadow-sm">
+                  <CollapsibleTrigger asChild>
+                    <CardHeader className="cursor-pointer hover:bg-gray-50 pb-3">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-3">
+                          {openItems.has(index) ? (
+                            <ChevronDown className="h-4 w-4 text-gray-500" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-gray-500" />
                           )}
-                          {item.madeFor && item.madeFor !== customerName && (
-                            <Badge variant="outline" className="text-purple-600">
-                              <User className="h-3 w-3 mr-1" />
-                              {item.madeFor}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        {item.totalAmount > 0 && (
-                          <div className="text-right">
-                            <div className="font-medium">₹{(item.totalAmount * item.quantity).toLocaleString()}</div>
-                            <div className="text-sm text-gray-500">Qty: {item.quantity}</div>
-                            {item.balance > 0 && (
-                              <div className="text-xs text-red-600">Balance: ₹{item.balance.toLocaleString()}</div>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-medium">Item {index + 1}</span>
+                            {item.category && (
+                              <Badge variant="secondary">{item.category}</Badge>
+                            )}
+                            {item.madeFor && item.madeFor !== customerName && (
+                              <Badge variant="outline" className="text-purple-600">
+                                <User className="h-3 w-3 mr-1" />
+                                {item.madeFor}
+                              </Badge>
                             )}
                           </div>
-                        )}
-                        {orderItems.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeItem(index);
-                            }}
-                            className="text-red-600 hover:bg-red-50"
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          {item.totalAmount > 0 && (
+                            <div className="text-right">
+                              <div className="font-medium">₹{(item.totalAmount * item.quantity).toLocaleString()}</div>
+                              <div className="text-sm text-gray-500">Qty: {item.quantity}</div>
+                              {item.balance > 0 && (
+                                <div className="text-xs text-red-600">Balance: ₹{item.balance.toLocaleString()}</div>
+                              )}
+                            </div>
+                          )}
+                          {orderItems.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeItem(index);
+                              }}
+                              className="text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent className="pt-0 space-y-6">
+                      {/* Basic Info */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Made For *</Label>
+                          <Input
+                            value={item.madeFor}
+                            onChange={(e) => updateItem(index, 'madeFor', e.target.value)}
+                            placeholder="Person this item is made for"
+                          />
+                        </div>
+                        <div>
+                          <Label>Item Category *</Label>
+                          <Select
+                            value={item.category}
+                            onValueChange={(value) => updateItem(index, 'category', value)}
                           >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories.map(cat => (
+                                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
-                    </div>
-                  </CardHeader>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent className="pt-0 space-y-6">
-                    {/* Basic Info */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      
                       <div>
-                        <Label>Made For *</Label>
+                        <Label>Description</Label>
                         <Input
-                          value={item.madeFor}
-                          onChange={(e) => updateItem(index, 'madeFor', e.target.value)}
-                          placeholder="Person this item is made for"
+                          value={item.description}
+                          onChange={(e) => updateItem(index, 'description', e.target.value)}
+                          placeholder="Brief description of the item"
                         />
                       </div>
-                      <div>
-                        <Label>Item Category *</Label>
-                        <Select
-                          value={item.category}
-                          onValueChange={(value) => updateItem(index, 'category', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {categories.map(cat => (
-                              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <Label>Description</Label>
-                      <Input
-                        value={item.description}
-                        onChange={(e) => updateItem(index, 'description', e.target.value)}
-                        placeholder="Brief description of the item"
-                      />
-                    </div>
-                    
-                    {/* Payment Fields */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div>
-                        <Label>Total Amount (₹) *</Label>
-                        <div className="relative">
-                          <DollarSign className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      
+                      {/* Enhanced Payment Fields */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                          <Label>Total Amount (₹) *</Label>
+                          <div className="relative">
+                            <DollarSign className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={getFieldValue(item.totalAmount, `total-${index}`)}
+                              onChange={(e) => updateItem(index, 'totalAmount', parseFloat(e.target.value) || 0)}
+                              onFocus={() => handleFieldFocus(`total-${index}`)}
+                              onBlur={() => handleFieldBlur(`total-${index}`)}
+                              placeholder="Enter amount"
+                              className="pl-10"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label>Advance Amount (₹)</Label>
+                          <div className="relative">
+                            <DollarSign className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={getFieldValue(item.advanceAmount, `advance-${index}`)}
+                              onChange={(e) => updateItem(index, 'advanceAmount', parseFloat(e.target.value) || 0)}
+                              onFocus={() => handleFieldFocus(`advance-${index}`)}
+                              onBlur={() => handleFieldBlur(`advance-${index}`)}
+                              placeholder="Enter advance"
+                              className="pl-10"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label>Balance (₹)</Label>
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              value={item.balance}
+                              readOnly
+                              className="bg-gray-50 font-medium text-red-600"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label>Quantity *</Label>
                           <Input
                             type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.totalAmount}
-                            onChange={(e) => updateItem(index, 'totalAmount', parseFloat(e.target.value) || 0)}
-                            placeholder="0"
-                            className="pl-10"
+                            min="1"
+                            value={item.quantity}
+                            onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
                           />
                         </div>
                       </div>
-                      <div>
-                        <Label>Advance Amount (₹)</Label>
-                        <div className="relative">
-                          <DollarSign className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={item.advanceAmount}
-                            onChange={(e) => updateItem(index, 'advanceAmount', parseFloat(e.target.value) || 0)}
-                            placeholder="0"
-                            className="pl-10"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <Label>Balance (₹)</Label>
-                        <div className="relative">
-                          <Input
-                            type="number"
-                            value={item.balance}
-                            readOnly
-                            className="bg-gray-50 font-medium text-red-600"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <Label>Quantity *</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                        />
-                      </div>
-                    </div>
 
-                    {/* Status & Dates */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <Label>Status</Label>
-                        <Select
-                          value={item.status}
-                          onValueChange={(value) => updateItem(index, 'status', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {statusOptions.map(status => (
-                              <SelectItem key={status} value={status}>
-                                {status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ')}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>Order Date</Label>
-                        <div className="relative">
-                          <Calendar className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                          <Input
-                            type="date"
-                            value={item.orderDate}
-                            onChange={(e) => updateItem(index, 'orderDate', e.target.value)}
-                            className="pl-10"
-                          />
+                      {/* Status & Dates */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <Label>Status</Label>
+                          <Select
+                            value={item.status}
+                            onValueChange={(value) => updateItem(index, 'status', value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {statusOptions.map(status => (
+                                <SelectItem key={status} value={status}>
+                                  {status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ')}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Order Date</Label>
+                          <div className="relative">
+                            <Calendar className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input
+                              type="date"
+                              value={item.orderDate}
+                              onChange={(e) => updateItem(index, 'orderDate', e.target.value)}
+                              className="pl-10"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label>Delivery Date *</Label>
+                          <div className="relative">
+                            <Calendar className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input
+                              type="date"
+                              value={item.deliveryDate}
+                              onChange={(e) => updateItem(index, 'deliveryDate', e.target.value)}
+                              className="pl-10"
+                            />
+                          </div>
                         </div>
                       </div>
-                      <div>
-                        <Label>Delivery Date *</Label>
-                        <div className="relative">
-                          <Calendar className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                          <Input
-                            type="date"
-                            value={item.deliveryDate}
-                            onChange={(e) => updateItem(index, 'deliveryDate', e.target.value)}
-                            className="pl-10"
-                          />
-                        </div>
-                      </div>
-                    </div>
 
-                    {/* Enhanced Staff Assignment */}
-                    {staff.length > 0 && (
-                      <div>
-                        <Label className="flex items-center">
-                          <Users className="h-4 w-4 mr-2" />
-                          Assign Staff
-                        </Label>
-                        <div className="mt-2 space-y-2 max-h-32 overflow-y-auto border rounded-md p-3">
-                          {staff.map(staffMember => (
-                            <Tooltip key={staffMember.id}>
-                              <TooltipTrigger asChild>
-                                <div className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
-                                  <input
-                                    type="checkbox"
-                                    id={`staff-${index}-${staffMember.id}`}
-                                    checked={item.assignedStaff.includes(staffMember.id)}
-                                    onChange={(e) => updateStaffAssignment(index, staffMember.id, e.target.checked)}
-                                    className="rounded"
-                                  />
-                                  <Avatar className="h-8 w-8">
-                                    <AvatarImage src={staffMember.photo} />
-                                    <AvatarFallback className="text-xs">
-                                      {staffMember.name.split(' ').map(n => n[0]).join('')}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex-1">
-                                    <div className="text-sm font-medium">{staffMember.name}</div>
-                                    <div className="text-xs text-gray-500">{staffMember.role || 'Staff'}</div>
+                      {/* Enhanced Staff Assignment */}
+                      {staff.length > 0 && (
+                        <div>
+                          <Label className="flex items-center">
+                            <Users className="h-4 w-4 mr-2" />
+                            Assign Staff
+                          </Label>
+                          <div className="mt-2 space-y-2 max-h-32 overflow-y-auto border rounded-md p-3">
+                            {staff.map(staffMember => (
+                              <Tooltip key={staffMember.id}>
+                                <TooltipTrigger asChild>
+                                  <div className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
+                                    <input
+                                      type="checkbox"
+                                      id={`staff-${index}-${staffMember.id}`}
+                                      checked={item.assignedStaff.includes(staffMember.id)}
+                                      onChange={(e) => updateStaffAssignment(index, staffMember.id, e.target.checked)}
+                                      className="rounded"
+                                    />
+                                    <Avatar className="h-8 w-8">
+                                      <AvatarImage src={staffMember.photo} />
+                                      <AvatarFallback className="text-xs">
+                                        {staffMember.name.split(' ').map(n => n[0]).join('')}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1">
+                                      <div className="text-sm font-medium">{staffMember.name}</div>
+                                      <div className="text-xs text-gray-500">{staffMember.role || 'Staff'}</div>
+                                    </div>
+                                    {staffMember.activeOrdersCount !== undefined && (
+                                      <Badge variant="outline" className="text-xs">
+                                        {staffMember.activeOrdersCount} active
+                                      </Badge>
+                                    )}
                                   </div>
-                                  {staffMember.activeOrdersCount !== undefined && (
-                                    <Badge variant="outline" className="text-xs">
-                                      {staffMember.activeOrdersCount} active
-                                    </Badge>
-                                  )}
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>{staffMember.activeOrdersCount || 0} active orders</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Enhanced Required Materials */}
-                    {materials.length > 0 && (
-                      <div>
-                        <Label className="flex items-center">
-                          <Package2 className="h-4 w-4 mr-2" />
-                          Required Materials
-                        </Label>
-                        <div className="mt-2 space-y-2 max-h-32 overflow-y-auto border rounded-md p-3">
-                          {materials.map(material => {
-                            const requiredMaterial = item.requiredMaterials.find(m => m.id === material.id);
-                            return (
-                              <div key={material.id} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
-                                <input
-                                  type="checkbox"
-                                  id={`material-${index}-${material.id}`}
-                                  checked={!!requiredMaterial}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      updateMaterialRequirement(index, material.id, 1);
-                                    } else {
-                                      updateMaterialRequirement(index, material.id, 0);
-                                    }
-                                  }}
-                                  className="rounded"
-                                />
-                                <div className="flex-1">
-                                  <div className="text-sm font-medium">{material.name}</div>
-                                  <div className="text-xs text-gray-500">Unit: {material.unit}</div>
-                                </div>
-                                <Badge 
-                                  variant={material.quantity > 10 ? "default" : "destructive"}
-                                  className="text-xs"
-                                >
-                                  {material.quantity} left
-                                </Badge>
-                                {requiredMaterial && (
-                                  <Input
-                                    type="number"
-                                    min="1"
-                                    max={material.quantity}
-                                    value={requiredMaterial.quantity}
-                                    onChange={(e) => updateMaterialRequirement(index, material.id, parseInt(e.target.value) || 1)}
-                                    className="w-20 text-xs"
-                                  />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Enhanced Design Images */}
-                    <div>
-                      <Label>Design Images</Label>
-                      <div className="mt-2">
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={uploadingImages[index]}
-                            onClick={() => {
-                              const input = document.createElement('input');
-                              input.type = 'file';
-                              input.multiple = true;
-                              input.accept = 'image/*';
-                              input.onchange = (e) => {
-                                const files = (e.target as HTMLInputElement).files;
-                                handleImageUpload(index, files);
-                              };
-                              input.click();
-                            }}
-                          >
-                            <Upload className="h-4 w-4 mr-2" />
-                            {uploadingImages[index] ? 'Uploading...' : 'Upload Images'}
-                          </Button>
-                        </div>
-                        
-                        {item.designImages.length > 0 && (
-                          <div className="mt-3 grid grid-cols-4 md:grid-cols-6 gap-2">
-                            {item.designImages.map((image, imgIndex) => (
-                              <div key={imgIndex} className="relative group">
-                                <img
-                                  src={image}
-                                  alt={`Design ${imgIndex + 1}`}
-                                  className="w-full h-16 object-cover rounded border cursor-pointer hover:scale-105 transition-transform"
-                                  onClick={() => window.open(image, '_blank')}
-                                />
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="absolute -top-2 -right-2 h-6 w-6 p-0 bg-red-500 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => removeDesignImage(index, imgIndex)}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{staffMember.activeOrdersCount || 0} active orders</p>
+                                </TooltipContent>
+                              </Tooltip>
                             ))}
                           </div>
-                        )}
-                      </div>
-                    </div>
+                        </div>
+                      )}
 
-                    {/* Notes */}
-                    <div>
-                      <Label>Notes</Label>
-                      <Textarea
-                        value={item.notes}
-                        onChange={(e) => updateItem(index, 'notes', e.target.value)}
-                        placeholder="Special instructions or notes for this item..."
-                        rows={3}
-                      />
-                    </div>
-                  </CardContent>
-                </CollapsibleContent>
-              </Card>
-            </Collapsible>
+                      {/* Enhanced Required Materials */}
+                      {materials.length > 0 && (
+                        <div>
+                          <Label className="flex items-center">
+                            <Package2 className="h-4 w-4 mr-2" />
+                            Required Materials
+                          </Label>
+                          <div className="mt-2 space-y-2 max-h-40 overflow-y-auto border rounded-md p-3">
+                            {materials.map(material => {
+                              const requiredMaterial = item.requiredMaterials.find(m => m.id === material.id);
+                              return (
+                                <div key={material.id} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
+                                  <input
+                                    type="checkbox"
+                                    id={`material-${index}-${material.id}`}
+                                    checked={!!requiredMaterial}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        updateMaterialRequirement(index, material.id, 1);
+                                      } else {
+                                        updateMaterialRequirement(index, material.id, 0);
+                                      }
+                                    }}
+                                    className="rounded"
+                                  />
+                                  <div className="flex-1">
+                                    <div className="text-sm font-medium">{material.name}</div>
+                                    <div className="text-xs text-gray-500">Unit: {material.unit}</div>
+                                  </div>
+                                  <Badge 
+                                    variant={material.quantity > 10 ? "default" : "destructive"}
+                                    className="text-xs"
+                                  >
+                                    {material.quantity} left
+                                  </Badge>
+                                  {requiredMaterial && (
+                                    <div className="flex items-center space-x-1">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => decrementMaterial(index, material.id)}
+                                        disabled={requiredMaterial.quantity <= 0}
+                                        className="h-6 w-6 p-0"
+                                      >
+                                        <Minus className="h-3 w-3" />
+                                      </Button>
+                                      <span className="w-8 text-center text-sm">{requiredMaterial.quantity}</span>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => incrementMaterial(index, material.id)}
+                                        disabled={requiredMaterial.quantity >= material.quantity}
+                                        className="h-6 w-6 p-0"
+                                      >
+                                        <Plus className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Enhanced Design Images with Canvas */}
+                      <div>
+                        <Label>Design Images & Sketches</Label>
+                        <div className="mt-2 space-y-3">
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={uploadingImages[index]}
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.multiple = true;
+                                input.accept = 'image/*';
+                                input.onchange = (e) => {
+                                  const files = (e.target as HTMLInputElement).files;
+                                  handleImageUpload(index, files);
+                                };
+                                input.click();
+                              }}
+                            >
+                              <Upload className="h-4 w-4 mr-2" />
+                              {uploadingImages[index] ? 'Uploading...' : 'Upload Images'}
+                            </Button>
+                            
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCanvasOpen(prev => ({ ...prev, [index]: true }))}
+                            >
+                              <Palette className="h-4 w-4 mr-2" />
+                              Open Design Canvas
+                            </Button>
+                          </div>
+                          
+                          {item.designImages.length > 0 && (
+                            <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
+                              {item.designImages.map((image, imgIndex) => (
+                                <div key={imgIndex} className="relative group">
+                                  <img
+                                    src={image}
+                                    alt={`Design ${imgIndex + 1}`}
+                                    className="w-full h-16 object-cover rounded border cursor-pointer hover:scale-105 transition-transform"
+                                    onClick={() => setImageViewerOpen(prev => ({ ...prev, [index]: image }))}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="absolute -top-2 -right-2 h-6 w-6 p-0 bg-red-500 text-white hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => removeDesignImage(index, imgIndex)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div>
+                        <Label>Notes</Label>
+                        <Textarea
+                          value={item.notes}
+                          onChange={(e) => updateItem(index, 'notes', e.target.value)}
+                          placeholder="Special instructions or notes for this item..."
+                          rows={3}
+                        />
+                      </div>
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+              
+              {/* Design Canvas Modal */}
+              <DesignCanvas
+                isOpen={canvasOpen[index] || false}
+                onClose={() => setCanvasOpen(prev => ({ ...prev, [index]: false }))}
+                onSave={(imageUrl) => handleCanvasSave(index, imageUrl)}
+              />
+              
+              {/* Image Viewer Modal */}
+              {imageViewerOpen[index] && (
+                <div 
+                  className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50"
+                  onClick={() => setImageViewerOpen(prev => ({ ...prev, [index]: null }))}
+                >
+                  <div className="relative max-w-4xl max-h-4xl p-4">
+                    <img
+                      src={imageViewerOpen[index]!}
+                      alt="Design Preview"
+                      className="max-w-full max-h-full object-contain"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="absolute top-2 right-2 bg-white"
+                      onClick={() => setImageViewerOpen(prev => ({ ...prev, [index]: null }))}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
           
           <Button

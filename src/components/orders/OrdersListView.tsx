@@ -59,16 +59,16 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Order ID</TableHead>
-            <TableHead>Customer</TableHead>
-            <TableHead>Made For</TableHead>
-            <TableHead>Item Type</TableHead>
-            <TableHead>Order Date</TableHead>
-            <TableHead>Delivery Date</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Total</TableHead>
-            <TableHead>Balance</TableHead>
-            <TableHead>Actions</TableHead>
+            <TableHead className="min-w-[100px]">Order ID</TableHead>
+            <TableHead className="min-w-[150px]">Customer</TableHead>
+            <TableHead className="min-w-[120px]">Made For</TableHead>
+            <TableHead className="min-w-[120px]">Item Type</TableHead>
+            <TableHead className="min-w-[100px]">Order Date</TableHead>
+            <TableHead className="min-w-[100px]">Delivery Date</TableHead>
+            <TableHead className="min-w-[80px]">Status</TableHead>
+            <TableHead className="min-w-[100px]">Total</TableHead>
+            <TableHead className="min-w-[100px]">Balance</TableHead>
+            <TableHead className="min-w-[250px]">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -80,37 +80,49 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                   #{order.orderNumber.slice(-4)}
                 </TableCell>
                 <TableCell>
-                  <div>
-                    <div className="font-medium">{order.customerName}</div>
-                    <div className="text-sm text-gray-500">{order.customerPhone}</div>
+                  <div className="max-w-[150px]">
+                    <div className="font-medium truncate" title={order.customerName}>
+                      {order.customerName}
+                    </div>
+                    <div className="text-sm text-gray-500 truncate" title={order.customerPhone}>
+                      {order.customerPhone}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {madeForItems.map((person, index) => (
+                  <div className="flex flex-wrap gap-1 max-w-[120px]">
+                    {madeForItems.slice(0, 2).map((person, index) => (
                       <Badge 
                         key={index} 
                         variant="outline" 
-                        className={person !== order.customerName ? "text-purple-600" : ""}
+                        className={`${person !== order.customerName ? "text-purple-600" : ""} text-xs truncate max-w-full`}
+                        title={person}
                       >
                         <User className="h-3 w-3 mr-1" />
-                        {person}
+                        {person.length > 8 ? `${person.slice(0, 8)}...` : person}
                       </Badge>
                     ))}
+                    {madeForItems.length > 2 && (
+                      <Badge variant="outline" className="text-xs">
+                        +{madeForItems.length - 2}
+                      </Badge>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div>
-                    <div>{order.itemType}</div>
+                  <div className="max-w-[120px]">
+                    <div className="truncate" title={order.itemType}>
+                      {order.itemType}
+                    </div>
                     {order.quantity > 1 && (
-                      <Badge variant="outline" className="text-xs">
+                      <Badge variant="outline" className="text-xs mt-1">
                         Qty: {order.quantity}
                       </Badge>
                     )}
                   </div>
                 </TableCell>
-                <TableCell>{order.orderDate}</TableCell>
-                <TableCell>{order.deliveryDate}</TableCell>
+                <TableCell className="text-sm">{order.orderDate}</TableCell>
+                <TableCell className="text-sm">{order.deliveryDate}</TableCell>
                 <TableCell>
                   <Badge className={getStatusColor(order.status)} variant="outline">
                     {order.status}
@@ -129,47 +141,78 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="flex space-x-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleViewOrder(order)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleEditOrder(order)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleSendWhatsApp(order)}
-                      className="text-green-600 hover:bg-green-50"
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                    </Button>
+                  <div className="flex flex-wrap gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewOrder(order)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>View Order</TooltipContent>
+                    </Tooltip>
+                    
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleEditOrder(order)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Edit Order</TooltipContent>
+                    </Tooltip>
+                    
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSendWhatsApp(order)}
+                          className="text-green-600 hover:bg-green-50 h-8 w-8 p-0"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Send WhatsApp</TooltipContent>
+                    </Tooltip>
+                    
                     {handleBillOrder && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleBillOrder(order)}
-                        className="text-purple-600 hover:bg-purple-50"
-                      >
-                        <Receipt className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleBillOrder(order)}
+                            className="text-purple-600 hover:bg-purple-50 h-8 w-8 p-0"
+                          >
+                            <Receipt className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Generate Bill</TooltipContent>
+                      </Tooltip>
                     )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="md:hidden"
-                      onClick={() => window.open(`tel:${order.customerPhone}`)}
-                    >
-                      <Phone className="h-4 w-4" />
-                    </Button>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="md:hidden h-8 w-8 p-0"
+                          onClick={() => window.open(`tel:${order.customerPhone}`)}
+                        >
+                          <Phone className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Call Customer</TooltipContent>
+                    </Tooltip>
                   </div>
                 </TableCell>
               </TableRow>

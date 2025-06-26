@@ -1,12 +1,14 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MessageSquare, DollarSign, Package, Receipt, Copy, Send, User, Calendar } from 'lucide-react';
+import { MessageSquare, Copy, Send, Plus, Save } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface Order {
@@ -14,352 +16,382 @@ interface Order {
   orderNumber: string;
   customerName: string;
   customerPhone: string;
-  itemType: string;
-  quantity: number;
-  totalAmount: number;
-  advanceAmount: number;
-  remainingAmount: number;
   status: string;
-  orderDate: string;
+  totalAmount: number;
+  remainingAmount: number;
   deliveryDate: string;
+  orderDate: string;
+  itemType?: string;
   items?: any[];
 }
 
 interface WhatsAppMessageModalProps {
+  order: Order;
   isOpen: boolean;
   onClose: () => void;
-  order: Order;
+}
+
+interface MessageTemplate {
+  id: string;
+  name: string;
+  content: string;
 }
 
 const WhatsAppMessageModal: React.FC<WhatsAppMessageModalProps> = ({
+  order,
   isOpen,
-  onClose,
-  order
+  onClose
 }) => {
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
-  const [customMessage, setCustomMessage] = useState('');
-  const [variables, setVariables] = useState({
-    customerName: order.customerName,
-    orderId: order.orderNumber.slice(-4),
-    orderNumber: order.orderNumber,
-    status: order.status,
-    balance: order.remainingAmount,
-    totalAmount: order.totalAmount,
-    advanceAmount: order.advanceAmount,
-    itemType: order.itemType,
-    quantity: order.quantity,
-    orderDate: order.orderDate,
-    deliveryDate: order.deliveryDate
-  });
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [message, setMessage] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [customTemplateName, setCustomTemplateName] = useState('');
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
-  const messageTemplates = {
-    orderEnquiry: {
-      title: 'Order Enquiry',
-      icon: Package,
-      description: 'General order information and status',
-      template: `Hi {customerName}! 
-
-Thank you for your interest in Swetha's Couture. 
-
-Order Details:
-• Order ID: #{orderId}
-• Item: {itemType}
-• Quantity: {quantity}
-• Order Date: {orderDate}
-• Expected Delivery: {deliveryDate}
-
-How can I assist you today?
-
-Best regards,
-Swetha's Couture 🪡✨`
+  const [templates, setTemplates] = useState<MessageTemplate[]>([
+    {
+      id: 'order-enquiry',
+      name: 'Order Enquiry',
+      content: 'Hello {customerName}, thank you for your order #{orderNumber}. We have received your {itemType} order and will begin work shortly. Total amount: ₹{totalAmount}. Expected delivery: {deliveryDate}.'
     },
-
-    statusUpdate: {
-      title: 'Status Update',
-      icon: MessageSquare,
-      description: 'Notify customer about order progress',
-      template: `Hi {customerName}! 
-
-Your order update from Swetha's Couture:
-
-Order #{orderId} - {itemType}
-Status: {status}
-
-${order.status === 'ready' ? 
-  `Great news! Your order is ready for pickup. Please visit us at your convenience.` :
-  order.status === 'in-progress' ? 
-  `Your order is currently being crafted with care. Expected completion: {deliveryDate}` :
-  order.status === 'delivered' ? 
-  `Thank you for choosing us! We hope you love your {itemType}.` :
-  `Your order is currently {status}. Expected delivery: {deliveryDate}`}
-
-Thank you for choosing Swetha's Couture! 🪡✨`
+    {
+      id: 'status-update',
+      name: 'Status Update',
+      content: 'Hi {customerName}, your order #{orderNumber} status has been updated to: {status}. We will keep you informed of further progress. Thank you for choosing us!'
     },
-
-    paymentAlert: {
-      title: 'Payment Alert',
-      icon: DollarSign,
-      description: 'Payment reminder and balance details',
-      template: `Hi {customerName}! 
-
-Payment details for your order:
-
-Order #{orderId} - {itemType}
-• Total Amount: ₹{totalAmount}
-• Advance Paid: ₹{advanceAmount}
-• Remaining Balance: ₹{balance}
-
-${order.remainingAmount > 0 ? 
-  `Please clear the remaining balance before delivery/pickup.` : 
-  `Payment completed. Thank you!`}
-
-For any queries, feel free to contact us.
-
-Best regards,
-Swetha's Couture 🪡`
+    {
+      id: 'payment-alert',
+      name: 'Payment Alert',
+      content: 'Dear {customerName}, this is a gentle reminder that your order #{orderNumber} has a pending balance of ₹{balance}. Please arrange payment at your earliest convenience.'
     },
-
-    billDelivery: {
-      title: 'Bill Delivery',
-      icon: Receipt,
-      description: 'Send bill details with payment options',
-      template: `Hello {customerName}! 🪡✨
-
-Your bill for Order #{orderId} is ready from Swetha's Couture.
-
-Bill Details:
-• Total Amount: ₹{totalAmount}
-• Advance Paid: ₹{advanceAmount}
-• Balance Due: ₹{balance}
-
-Please complete the payment at your earliest convenience.
-
-Thank you for choosing Swetha's Couture! 💜`
+    {
+      id: 'ready-notification',
+      name: 'Ready for Pickup',
+      content: 'Great news {customerName}! Your order #{orderNumber} is ready for pickup. Please visit us at your convenience. Balance due: ₹{balance}'
     },
-
-    readyForPickup: {
-      title: 'Ready for Pickup',
-      icon: Package,
-      description: 'Notify when order is ready',
-      template: `🎉 Great News, {customerName}!
-
-Your order is ready for pickup! ✨
-
-Order Details:
-• Order ID: #{orderId}
-• Item: {itemType}
-• Quantity: {quantity}
-
-${order.remainingAmount > 0 ? 
-  `Balance Due: ₹{balance} (to be paid at pickup)` : 
-  `Payment Status: Complete ✅`}
-
-Please visit us at your convenience to collect your beautiful {itemType}.
-
-Swetha's Couture 🪡`
-    },
-
-    deliveryReminder: {
-      title: 'Delivery Reminder',
-      icon: Calendar,
-      description: 'Remind about upcoming delivery date',
-      template: `Hi {customerName}! 
-
-Gentle reminder about your order delivery:
-
-Order #{orderId} - {itemType}
-Delivery Date: {deliveryDate}
-
-${order.remainingAmount > 0 ? 
-  `Balance Due: ₹{balance} (please arrange payment)` : 
-  `Payment: Complete ✅`}
-
-We'll contact you on the delivery date. Please ensure someone is available to receive the order.
-
-Thank you!
-Swetha's Couture 🪡✨`
+    {
+      id: 'delivery-confirmation',
+      name: 'Delivery Confirmation',
+      content: 'Hi {customerName}, your order #{orderNumber} has been successfully delivered. Thank you for choosing Swetha\'s Couture! We hope you love your {itemType}.'
     }
-  };
+  ]);
 
-  const quickVariables = [
-    { key: '{customerName}', label: 'Customer Name', value: variables.customerName },
-    { key: '{orderId}', label: 'Order ID', value: variables.orderId },
-    { key: '{orderNumber}', label: 'Full Order Number', value: variables.orderNumber },
-    { key: '{status}', label: 'Order Status', value: variables.status },
-    { key: '{balance}', label: 'Balance Amount', value: `₹${variables.balance.toLocaleString()}` },
-    { key: '{totalAmount}', label: 'Total Amount', value: `₹${variables.totalAmount.toLocaleString()}` },
-    { key: '{advanceAmount}', label: 'Advance Amount', value: `₹${variables.advanceAmount.toLocaleString()}` },
-    { key: '{itemType}', label: 'Item Type', value: variables.itemType },
-    { key: '{quantity}', label: 'Quantity', value: variables.quantity.toString() },
-    { key: '{orderDate}', label: 'Order Date', value: variables.orderDate },
-    { key: '{deliveryDate}', label: 'Delivery Date', value: variables.deliveryDate }
+  const variables = [
+    { key: '{customerName}', value: order.customerName, description: 'Customer Name' },
+    { key: '{orderNumber}', value: order.orderNumber, description: 'Order Number' },
+    { key: '{orderId}', value: order.orderNumber, description: 'Order ID' },
+    { key: '{status}', value: order.status, description: 'Order Status' },
+    { key: '{totalAmount}', value: order.totalAmount?.toLocaleString() || '0', description: 'Total Amount' },
+    { key: '{balance}', value: order.remainingAmount?.toLocaleString() || '0', description: 'Balance Amount' },
+    { key: '{deliveryDate}', value: order.deliveryDate, description: 'Delivery Date' },
+    { key: '{orderDate}', value: order.orderDate, description: 'Order Date' },
+    { key: '{itemType}', value: order.itemType || 'order', description: 'Item Type' },
+    { key: '{phone}', value: order.customerPhone, description: 'Phone Number' }
   ];
 
-  const handleTemplateSelect = (templateKey: string) => {
-    setSelectedTemplate(templateKey);
-    const template = messageTemplates[templateKey as keyof typeof messageTemplates];
+  useEffect(() => {
+    if (isOpen && order) {
+      setPhoneNumber(order.customerPhone || '');
+      setMessage('');
+      setSelectedTemplate('');
+      setShowSaveTemplate(false);
+      setCustomTemplateName('');
+    }
+  }, [isOpen, order]);
+
+  const resolveVariables = (text: string): string => {
+    let resolvedText = text;
+    variables.forEach(variable => {
+      const regex = new RegExp(variable.key.replace(/[{}]/g, '\\$&'), 'g');
+      resolvedText = resolvedText.replace(regex, variable.value);
+    });
+    return resolvedText;
+  };
+
+  const handleTemplateSelect = (templateId: string) => {
+    const template = templates.find(t => t.id === templateId);
     if (template) {
-      let processedMessage = template.template;
-      
-      // Replace variables in template
-      quickVariables.forEach(variable => {
-        processedMessage = processedMessage.replace(new RegExp(variable.key.replace(/[{}]/g, '\\$&'), 'g'), variable.value);
-      });
-      
-      setCustomMessage(processedMessage);
+      setSelectedTemplate(templateId);
+      setMessage(template.content);
     }
   };
 
   const insertVariable = (variable: string) => {
-    const textarea = document.querySelector('textarea');
-    if (textarea) {
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const text = customMessage;
-      const before = text.substring(0, start);
-      const after = text.substring(end);
-      const newText = before + variable + after;
-      setCustomMessage(newText);
-      
-      // Set cursor position after the inserted variable
-      setTimeout(() => {
-        textarea.setSelectionRange(start + variable.length, start + variable.length);
-        textarea.focus();
-      }, 0);
-    }
+    const cursorPosition = (document.getElementById('message-textarea') as HTMLTextAreaElement)?.selectionStart || message.length;
+    const newMessage = message.slice(0, cursorPosition) + variable + message.slice(cursorPosition);
+    setMessage(newMessage);
   };
 
-  const copyMessage = () => {
-    navigator.clipboard.writeText(customMessage);
-    toast({
-      title: "Copied!",
-      description: "Message copied to clipboard",
+  const handleCopyMessage = () => {
+    const resolvedMessage = resolveVariables(message);
+    navigator.clipboard.writeText(resolvedMessage).then(() => {
+      toast({
+        title: "Copied!",
+        description: "Message copied to clipboard",
+      });
     });
   };
 
-  const sendWhatsAppMessage = () => {
-    const phone = order.customerPhone.replace(/\D/g, '');
-    const formattedPhone = phone.startsWith('91') ? phone : `91${phone}`;
-    const message = encodeURIComponent(customMessage);
-    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${message}`;
+  const handleSendWhatsApp = () => {
+    if (!phoneNumber || !message) {
+      toast({
+        title: "Error",
+        description: "Please enter phone number and message",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const resolvedMessage = resolveVariables(message);
+    const encodedMessage = encodeURIComponent(resolvedMessage);
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
+    
     window.open(whatsappUrl, '_blank');
     onClose();
   };
+
+  const handleSaveTemplate = () => {
+    if (!customTemplateName || !message) {
+      toast({
+        title: "Error",
+        description: "Please enter template name and message",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newTemplate: MessageTemplate = {
+      id: `custom-${Date.now()}`,
+      name: customTemplateName,
+      content: message
+    };
+
+    setTemplates(prev => [...prev, newTemplate]);
+    
+    // Save to localStorage
+    const savedTemplates = JSON.parse(localStorage.getItem('whatsapp-templates') || '[]');
+    savedTemplates.push(newTemplate);
+    localStorage.setItem('whatsapp-templates', JSON.stringify(savedTemplates));
+
+    toast({
+      title: "Success",
+      description: "Template saved successfully",
+    });
+
+    setShowSaveTemplate(false);
+    setCustomTemplateName('');
+  };
+
+  // Load custom templates from localStorage
+  useEffect(() => {
+    const savedTemplates = JSON.parse(localStorage.getItem('whatsapp-templates') || '[]');
+    if (savedTemplates.length > 0) {
+      setTemplates(prev => {
+        const defaultTemplates = prev.filter(t => !t.id.startsWith('custom-'));
+        return [...defaultTemplates, ...savedTemplates];
+      });
+    }
+  }, []);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Send WhatsApp Message</DialogTitle>
-          <div className="flex items-center space-x-2 text-sm text-gray-600">
-            <User className="h-4 w-4" />
-            <span>To: {order.customerName}</span>
-            <Badge variant="outline">{order.customerPhone}</Badge>
-          </div>
+          <DialogTitle className="flex items-center">
+            <MessageSquare className="h-5 w-5 mr-2 text-green-600" />
+            Send WhatsApp Message
+          </DialogTitle>
         </DialogHeader>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Template Selection */}
-          <div className="lg:col-span-2">
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium mb-3">Choose Message Template:</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {Object.entries(messageTemplates).map(([key, template]) => {
-                    const Icon = template.icon;
-                    return (
-                      <Card
-                        key={key}
-                        className={`cursor-pointer transition-all hover:shadow-md ${
-                          selectedTemplate === key ? 'ring-2 ring-blue-500 bg-blue-50' : ''
-                        }`}
-                        onClick={() => handleTemplateSelect(key)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start space-x-3">
-                            <Icon className="h-5 w-5 mt-0.5 text-blue-600" />
-                            <div>
-                              <div className="font-medium text-sm">{template.title}</div>
-                              <div className="text-xs text-gray-500 mt-1">{template.description}</div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+          {/* Main Message Area */}
+          <div className="lg:col-span-2 space-y-4">
+            {/* Customer Info */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Customer Name</Label>
+                    <Input value={order.customerName} readOnly className="bg-gray-50" />
+                  </div>
+                  <div>
+                    <Label>Phone Number</Label>
+                    <Input
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="Enter phone number"
+                    />
+                  </div>
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              {/* Message Preview/Edit */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium">Message Preview & Edit:</h3>
+            {/* Template Selection */}
+            <div>
+              <Label>Choose Message Template</Label>
+              <Select value={selectedTemplate} onValueChange={handleTemplateSelect}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a template or write custom message" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map(template => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Message Textarea */}
+            <div>
+              <Label>Message</Label>
+              <Textarea
+                id="message-textarea"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Type your message here..."
+                rows={8}
+                className="resize-none"
+              />
+            </div>
+
+            {/* Save Template */}
+            {message && !selectedTemplate && (
+              <div className="space-y-2">
+                {!showSaveTemplate ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowSaveTemplate(true)}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Save as Template
+                  </Button>
+                ) : (
                   <div className="flex space-x-2">
+                    <Input
+                      value={customTemplateName}
+                      onChange={(e) => setCustomTemplateName(e.target.value)}
+                      placeholder="Template name"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleSaveTemplate}
+                    >
+                      Save
+                    </Button>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={copyMessage}
-                      disabled={!customMessage.trim()}
+                      onClick={() => setShowSaveTemplate(false)}
                     >
-                      <Copy className="h-4 w-4 mr-2" />
-                      Copy
+                      Cancel
                     </Button>
                   </div>
-                </div>
-                <Textarea
-                  value={customMessage}
-                  onChange={(e) => setCustomMessage(e.target.value)}
-                  rows={12}
-                  className="font-mono text-sm resize-none"
-                  placeholder="Select a template above or type your custom message..."
-                />
+                )}
               </div>
+            )}
+
+            {/* Message Preview */}
+            {message && (
+              <div>
+                <Label>Message Preview</Label>
+                <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                  <div className="whitespace-pre-wrap text-sm">
+                    {resolveVariables(message)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-end space-x-3">
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleCopyMessage}
+                disabled={!message}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Message
+              </Button>
+              <Button
+                onClick={handleSendWhatsApp}
+                disabled={!message || !phoneNumber}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Send className="h-4 w-4 mr-2" />
+                Send WhatsApp
+              </Button>
             </div>
           </div>
 
           {/* Quick Variables Panel */}
-          <div>
-            <h3 className="text-sm font-medium mb-3">Quick Variables:</h3>
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {quickVariables.map((variable) => (
-                <Card
-                  key={variable.key}
-                  className="cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => insertVariable(variable.key)}
-                >
-                  <CardContent className="p-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="text-xs font-mono text-blue-600">{variable.key}</div>
-                        <div className="text-xs text-gray-500">{variable.label}</div>
-                      </div>
-                      <div className="text-xs text-gray-700 font-medium">{variable.value}</div>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Quick Variables</Label>
+              <p className="text-xs text-gray-600 mb-3">Click to insert into message</p>
+              <div className="grid grid-cols-1 gap-2">
+                {variables.map(variable => (
+                  <Button
+                    key={variable.key}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => insertVariable(variable.key)}
+                    className="justify-start h-auto p-2"
+                  >
+                    <div className="text-left">
+                      <div className="font-mono text-xs text-blue-600">{variable.key}</div>
+                      <div className="text-xs text-gray-500">{variable.description}</div>
+                      <div className="text-xs font-medium text-gray-800">{variable.value}</div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                  </Button>
+                ))}
+              </div>
             </div>
-            
-            <div className="mt-4 p-3 bg-blue-50 rounded text-xs text-blue-800">
-              <strong>Tip:</strong> Click on any variable above to insert it into your message at the cursor position.
-            </div>
-          </div>
-        </div>
 
-        {/* Action Buttons */}
-        <div className="flex justify-end space-x-3 pt-4 border-t">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={sendWhatsAppMessage}
-            disabled={!customMessage.trim()}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            <Send className="h-4 w-4 mr-2" />
-            Send via WhatsApp
-          </Button>
+            {/* Order Summary */}
+            <Card>
+              <CardContent className="p-4">
+                <Label className="text-sm font-medium">Order Summary</Label>
+                <div className="mt-2 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span>Order #:</span>
+                    <span className="font-medium">{order.orderNumber}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Status:</span>
+                    <Badge variant="outline" className="text-xs">
+                      {order.status}
+                    </Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Total:</span>
+                    <span className="font-medium">₹{order.totalAmount?.toLocaleString() || 0}</span>
+                  </div>
+                  {order.remainingAmount > 0 && (
+                    <div className="flex justify-between text-red-600">
+                      <span>Balance:</span>
+                      <span className="font-medium">₹{order.remainingAmount.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span>Delivery:</span>
+                    <span className="text-xs">{order.deliveryDate}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
