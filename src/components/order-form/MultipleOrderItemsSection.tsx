@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -97,18 +96,15 @@ const MultipleOrderItemsSection: React.FC<MultipleOrderItemsSectionProps> = ({
     const updatedItems = orderItems.filter((_, i) => i !== index);
     setOrderItems(updatedItems);
     setOpenItems(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(index);
-      // Adjust indices for remaining items
-      const adjustedSet = new Set();
-      newSet.forEach(itemIndex => {
+      const newSet = new Set<number>();
+      prev.forEach(itemIndex => {
         if (itemIndex < index) {
-          adjustedSet.add(itemIndex);
+          newSet.add(itemIndex);
         } else if (itemIndex > index) {
-          adjustedSet.add(itemIndex - 1);
+          newSet.add(itemIndex - 1);
         }
       });
-      return adjustedSet;
+      return newSet;
     });
   };
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -192,12 +191,8 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
     try {
       const totalAmount = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
       const totalQuantity = orderItems.reduce((sum, item) => sum + item.quantity, 0);
-      const totalAdvance = orderItems.reduce((sum, item) => {
-        // For simplicity, we'll distribute advance proportionally
-        return sum;
-      }, 0);
 
-      const orderData = {
+      const baseOrderData = {
         orderId: editingOrder?.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
         orderNumber: editingOrder?.orderNumber || `ORD-${Date.now().toString().slice(-6)}`,
         customerName: data.customerName,
@@ -208,7 +203,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
         quantity: totalQuantity,
         status: orderItems[0]?.status || 'received',
         totalAmount: totalAmount,
-        advanceAmount: 0, // To be set later via payment tracking
+        advanceAmount: 0,
         balance: totalAmount,
         remainingAmount: totalAmount,
         orderDate: orderItems[0]?.orderDate || new Date().toISOString().split('T')[0],
@@ -229,7 +224,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
 
       if (editingOrder) {
         // Update existing order
-        await updateDoc(doc(db, 'orders', editingOrder.id), orderData);
+        await updateDoc(doc(db, 'orders', editingOrder.id), baseOrderData);
         toast({
           title: "Success",
           description: "Order updated successfully",
@@ -237,7 +232,7 @@ const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, on
       } else {
         // Create new order
         const newOrderData = {
-          ...orderData,
+          ...baseOrderData,
           createdAt: serverTimestamp()
         };
         
