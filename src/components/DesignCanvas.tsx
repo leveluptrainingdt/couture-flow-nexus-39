@@ -1,9 +1,8 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Canvas as FabricCanvas, Circle, Rect, PencilBrush, IText } from 'fabric';
+import { Canvas as FabricCanvas, Circle, Rect, PencilBrush, IText, Point } from 'fabric';
 import * as fabric from 'fabric';
 import { 
   Palette, 
@@ -245,7 +244,7 @@ const DesignCanvas: React.FC<DesignCanvasProps> = ({
   const resetZoom = () => {
     if (!fabricCanvas) return;
     fabricCanvas.setZoom(1);
-    fabricCanvas.absolutePan({ x: 0, y: 0 });
+    fabricCanvas.absolutePan(new Point(0, 0));
     fabricCanvas.renderAll();
   };
 
