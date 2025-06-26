@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -11,11 +10,11 @@ import OrderDetailsModal from '@/components/OrderDetailsModal';
 import WhatsAppMessageModal from '@/components/WhatsAppMessageModal';
 import CreateOrderModal from '@/components/CreateOrderModal';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import OrderCalendar from '@/components/OrderCalendar';
 import OrdersStats from '@/components/orders/OrdersStats';
 import OrdersFilters from '@/components/orders/OrdersFilters';
 import OrdersGridView from '@/components/orders/OrdersGridView';
 import OrdersListView from '@/components/orders/OrdersListView';
-import OrdersCalendarView from '@/components/orders/OrdersCalendarView';
 
 interface OrderItem {
   madeFor: string;
@@ -257,10 +256,20 @@ const OrdersPage = () => {
   const renderContent = () => {
     try {
       if (view === 'calendar') {
+        // Transform orders to match OrderCalendar expected format
+        const calendarOrders = filteredOrders.map(order => ({
+          ...order,
+          totalAmount: 0,
+          advanceAmount: 0,
+          remainingAmount: 0
+        }));
+        
         return (
-          <OrdersCalendarView
-            orders={filteredOrders}
-            onDateSelect={() => {}}
+          <OrderCalendar 
+            orders={calendarOrders}
+            onDateSelect={(date, dayOrders) => {
+              console.log('Selected date:', date, 'Orders:', dayOrders);
+            }}
           />
         );
       }
