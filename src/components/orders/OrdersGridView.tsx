@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Eye, Edit, Trash2, Phone, MessageCircle, Clock, AlertCircle, CheckCircle, Package, XCircle } from 'lucide-react';
+import { Eye, Edit, Trash2, Phone, MessageCircle, Clock, AlertCircle, CheckCircle, Package, XCircle, User, Receipt, Calendar } from 'lucide-react';
 import { updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
@@ -23,6 +23,12 @@ interface Order {
   remainingAmount: number;
   quantity: number;
   status: 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled';
+  items?: Array<{
+    madeFor: string;
+    category: string;
+    price: number;
+    quantity: number;
+  }>;
 }
 
 interface OrdersGridViewProps {
@@ -62,6 +68,21 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
       case 'cancelled': return 'text-red-600 bg-red-50 border-red-200';
       default: return 'text-gray-600 bg-gray-50 border-gray-200';
     }
+  };
+
+  const getDeliveryStatus = (deliveryDate: string, status: string) => {
+    if (status === 'delivered') return null;
+    
+    const today = new Date();
+    const delivery = new Date(deliveryDate);
+    const diffTime = delivery.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return { type: 'overdue', text: 'Overdue', color: 'text-red-600 bg-red-100' };
+    if (diffDays === 0) return { type: 'today', text: 'Due Today', color: 'text-orange-600 bg-orange-100' };
+    if (diffDays <= 5) return { type: 'soon', text: `${diffDays} days left`, color: 'text-yellow-600 bg-yellow-100' };
+    
+    return null;
   };
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
@@ -108,6 +129,15 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
     }
   };
 
+  const handleBillClick = (order: Order) => {
+    // TODO: Navigate to billing page or generate bill
+    console.log('Generate bill for order:', order.id);
+    toast({
+      title: "Bill Feature",
+      description: "Bill generation will be implemented soon",
+    });
+  };
+
   if (filteredOrders.length === 0) {
     return (
       <Card className="text-center py-12">
@@ -121,44 +151,113 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {filteredOrders.map(order => (
-        <Card key={order.id} className="hover:shadow-lg transition-all duration-200">
-          <CardHeader className="pb-3">
-            <div className="flex justify-between items-start">
-              <div className="font-medium">#{order.orderNumber.slice(-3)}</div>
-              <Badge className={`${getStatusColor(order.status)} border`} variant="outline">
-                <div className="flex items-center space-x-1">
-                  {getStatusIcon(order.status)}
-                  <span className="capitalize">{order.status}</span>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {filteredOrders.map(order => {
+        const deliveryStatus = getDeliveryStatus(order.deliveryDate, order.status);
+        const multipleItems = order.items && order.items.length > 1;
+        
+        return (
+          <Card key={order.id} className="hover:shadow-xl transition-all duration-300 border-0 shadow-md rounded-xl overflow-hidden">
+            <CardHeader className="pb-4 bg-gradient-to-r from-blue-50 to-purple-50">
+              <div className="flex justify-between items-start">
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-lg">#{order.orderNumber.slice(-3)}</span>
+                    {multipleItems && (
+                      <Badge variant="secondary" className="text-xs">
+                        {order.items!.length} items
+                      </Badge>
+                    )}
+                  </div>
+                  {deliveryStatus && (
+                    <Badge className={`${deliveryStatus.color} border-0 text-xs`}>
+                      <Calendar className="h-3 w-3 mr-1" />
+                      {deliveryStatus.text}
+                    </Badge>
+                  )}
                 </div>
-              </Badge>
-            </div>
-            <div className="text-lg font-semibold">{order.customerName}</div>
-            <div className="text-sm text-gray-500">
-              {order.customerEmail && <div>{order.customerEmail}</div>}
-              <div>{order.customerPhone}</div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div>
-              <div className="font-medium">{order.itemType}</div>
-              <div className="text-sm text-gray-500">Qty: {order.quantity}</div>
-            </div>
+                <Badge className={`${getStatusColor(order.status)} border`} variant="outline">
+                  <div className="flex items-center space-x-1">
+                    {getStatusIcon(order.status)}
+                    <span className="capitalize">{order.status.replace('-', ' ')}</span>
+                  </div>
+                </Badge>
+              </div>
+            </CardHeader>
             
-            <div>
-              <div className="font-medium">₹{order.totalAmount.toLocaleString()}</div>
-              {order.remainingAmount > 0 && (
-                <div className="text-sm text-red-600">Balance: ₹{order.remainingAmount.toLocaleString()}</div>
-              )}
-            </div>
+            <CardContent className="p-6 space-y-4">
+              {/* Customer Info */}
+              <div className="space-y-2">
+                <h3 className="text-xl font-semibold text-gray-900">{order.customerName}</h3>
+                <div className="text-sm text-gray-600 space-y-1">
+                  <div>{order.customerPhone}</div>
+                  {order.customerEmail && <div>{order.customerEmail}</div>}
+                </div>
+              </div>
 
-            <div className="text-sm text-gray-600">
-              <div>Order: {order.orderDate}</div>
-              <div>Delivery: {order.deliveryDate}</div>
-            </div>
+              {/* Order Items */}
+              <div className="space-y-2">
+                {multipleItems ? (
+                  <div>
+                    <div className="font-medium text-gray-700">Multiple Items:</div>
+                    <div className="space-y-1">
+                      {order.items!.slice(0, 2).map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <div className="flex items-center space-x-2">
+                            <span>{item.category}</span>
+                            {item.madeFor !== order.customerName && (
+                              <Badge variant="outline" className="text-xs">
+                                <User className="h-3 w-3 mr-1" />
+                                {item.madeFor}
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="text-gray-500">Qty: {item.quantity}</span>
+                        </div>
+                      ))}
+                      {order.items!.length > 2 && (
+                        <div className="text-xs text-gray-500">
+                          +{order.items!.length - 2} more items
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between">
+                    <span className="font-medium">{order.itemType}</span>
+                    <span className="text-gray-500">Qty: {order.quantity}</span>
+                  </div>
+                )}
+              </div>
 
-            <div className="space-y-2">
+              {/* Dates */}
+              <div className="flex justify-between text-sm text-gray-600">
+                <div>
+                  <span className="font-medium">Order:</span> {order.orderDate}
+                </div>
+                <div>
+                  <span className="font-medium">Delivery:</span> {order.deliveryDate}
+                </div>
+              </div>
+
+              {/* Payment Info */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="text-lg font-bold text-gray-900">₹{order.totalAmount.toLocaleString()}</div>
+                    {order.remainingAmount > 0 && (
+                      <div className="text-sm text-red-600 font-medium">
+                        Balance: ₹{order.remainingAmount.toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                  {order.remainingAmount === 0 && (
+                    <Badge className="bg-green-100 text-green-700">Paid</Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Update */}
               <Select
                 value={order.status}
                 onValueChange={(value) => updateOrderStatus(order.id, value)}
@@ -176,12 +275,13 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                 </SelectContent>
               </Select>
 
-              <div className="flex space-x-2">
+              {/* Action Buttons */}
+              <div className="grid grid-cols-2 gap-2">
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => handleViewOrder(order)}
-                  className="flex-1"
+                  className="flex items-center justify-center"
                 >
                   <Eye className="h-4 w-4 mr-1" />
                   View
@@ -190,45 +290,53 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                   size="sm"
                   variant="outline"
                   onClick={() => handleEditOrder(order)}
-                  className="flex-1"
+                  className="flex items-center justify-center"
                 >
                   <Edit className="h-4 w-4 mr-1" />
                   Edit
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-red-600 hover:bg-red-50"
-                  onClick={() => deleteOrder(order)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
               </div>
 
-              <div className="flex space-x-2">
+              <div className="grid grid-cols-3 gap-2">
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => window.open(`tel:${order.customerPhone}`)}
-                  className="flex-1"
+                  className="flex items-center justify-center"
                 >
-                  <Phone className="h-4 w-4 mr-1" />
-                  Call
+                  <Phone className="h-4 w-4" />
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => handleSendWhatsApp(order)}
-                  className="text-green-600 flex-1"
+                  className="text-green-600 flex items-center justify-center"
                 >
-                  <MessageCircle className="h-4 w-4 mr-1" />
-                  WhatsApp
+                  <MessageCircle className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleBillClick(order)}
+                  className="text-purple-600 flex items-center justify-center"
+                >
+                  <Receipt className="h-4 w-4" />
                 </Button>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-red-600 hover:bg-red-50"
+                onClick={() => deleteOrder(order)}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete Order
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 };
