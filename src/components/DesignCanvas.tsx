@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ const DesignCanvas: React.FC<DesignCanvasProps> = ({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [canvasEmpty, setCanvasEmpty] = useState(true);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   const colors = [
     '#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', 
@@ -72,18 +74,73 @@ const DesignCanvas: React.FC<DesignCanvasProps> = ({
     canvas.freeDrawingBrush.width = brushSize;
     canvas.isDrawingMode = activeTool === 'pen';
 
+    // Enhanced mouse/touch event handling
+    const canvasElement = canvasRef.current;
+    
+    const handlePointerDown = (e: PointerEvent) => {
+      if (activeTool === 'pen' || activeTool === 'eraser') {
+        setIsDrawing(true);
+        const rect = canvasElement.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Start drawing path manually if needed
+        console.log('Drawing started at:', x, y);
+        setCanvasEmpty(false);
+      }
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (isDrawing && (activeTool === 'pen' || activeTool === 'eraser')) {
+        const rect = canvasElement.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        console.log('Drawing move to:', x, y);
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (isDrawing) {
+        setIsDrawing(false);
+        saveState(canvas);
+        console.log('Drawing ended');
+      }
+    };
+
+    // Add pointer event listeners for better touch/mouse support
+    canvasElement.addEventListener('pointerdown', handlePointerDown);
+    canvasElement.addEventListener('pointermove', handlePointerMove);
+    canvasElement.addEventListener('pointerup', handlePointerUp);
+    canvasElement.addEventListener('pointercancel', handlePointerUp);
+
+    // Set proper CSS cursor
+    canvasElement.style.cursor = activeTool === 'pen' ? 'crosshair' : 'default';
+
     // Listen for canvas changes to track if it's empty
     canvas.on('path:created', () => {
       setCanvasEmpty(false);
       saveState(canvas);
+      console.log('Path created on canvas');
     });
 
     canvas.on('object:added', () => {
       setCanvasEmpty(false);
+      console.log('Object added to canvas');
     });
 
     canvas.on('object:removed', () => {
       setCanvasEmpty(canvas.getObjects().length === 0);
+    });
+
+    // Mouse event handling for drawing mode
+    canvas.on('mouse:down', () => {
+      if (activeTool === 'pen' || activeTool === 'eraser') {
+        setIsDrawing(true);
+      }
+    });
+
+    canvas.on('mouse:up', () => {
+      setIsDrawing(false);
     });
 
     setFabricCanvas(canvas);
@@ -100,7 +157,18 @@ const DesignCanvas: React.FC<DesignCanvasProps> = ({
     // Save initial state
     saveState(canvas);
 
+    // Show canvas ready toast
+    toast({
+      title: "Canvas ready!",
+      description: "Start drawing with your mouse or touch",
+    });
+
     return () => {
+      // Clean up event listeners
+      canvasElement.removeEventListener('pointerdown', handlePointerDown);
+      canvasElement.removeEventListener('pointermove', handlePointerMove);
+      canvasElement.removeEventListener('pointerup', handlePointerUp);
+      canvasElement.removeEventListener('pointercancel', handlePointerUp);
       canvas.dispose();
     };
   }, [isOpen]);
@@ -122,13 +190,27 @@ const DesignCanvas: React.FC<DesignCanvasProps> = ({
     }
 
     // Set cursor based on active tool
+    const canvasElement = canvasRef.current;
+    if (canvasElement) {
+      if (activeTool === 'pen' || activeTool === 'eraser') {
+        canvasElement.style.cursor = 'crosshair';
+      } else if (activeTool === 'pan') {
+        canvasElement.style.cursor = 'grab';
+      } else {
+        canvasElement.style.cursor = 'default';
+      }
+    }
+
+    // Update fabric canvas cursors
     if (activeTool === 'pan') {
       fabricCanvas.defaultCursor = 'grab';
       fabricCanvas.moveCursor = 'grabbing';
     } else {
-      fabricCanvas.defaultCursor = 'default';
+      fabricCanvas.defaultCursor = activeTool === 'pen' ? 'crosshair' : 'default';
       fabricCanvas.moveCursor = 'move';
     }
+
+    console.log('Tool changed to:', activeTool, 'Drawing mode:', fabricCanvas.isDrawingMode);
   }, [activeTool, activeColor, brushSize, fabricCanvas]);
 
   const saveState = (canvas: FabricCanvas) => {
@@ -493,7 +575,13 @@ const DesignCanvas: React.FC<DesignCanvasProps> = ({
         {/* Canvas */}
         <div className="flex-1 flex justify-center items-center bg-gray-50 p-4 min-h-[600px]">
           <div className="border border-gray-300 shadow-lg bg-white">
-            <canvas ref={canvasRef} />
+            <canvas 
+              ref={canvasRef}
+              style={{ 
+                touchAction: 'none', // Prevent default touch behaviors
+                pointerEvents: 'auto' // Ensure pointer events work
+              }}
+            />
           </div>
         </div>
 

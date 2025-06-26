@@ -74,26 +74,43 @@ const StaffAssignment: React.FC<StaffAssignmentProps> = ({
       
       {staff.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {staff.map((member) => (
-            <Card key={member.id} className="p-3">
-              <div className="flex items-center space-x-3">
-                <Checkbox
-                  id={`staff-${member.id}`}
-                  checked={selectedStaff.includes(member.id)}
-                  onCheckedChange={(checked) => handleStaffToggle(member.id, checked as boolean)}
-                />
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={member.profileImage} />
-                  <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1">
-                  <div className="font-medium text-sm">{member.name}</div>
-                  <div className="text-xs text-gray-500">{member.designation}</div>
-                  <div className="text-xs text-gray-400">{member.phone}</div>
-                </div>
-              </div>
-            </Card>
-          ))}
+          {staff.map((member) => {
+            const isSelected = selectedStaff.includes(member.id);
+            return (
+              <label 
+                key={member.id}
+                htmlFor={`staff-${member.id}`}
+                className="cursor-pointer"
+                role="checkbox"
+                aria-checked={isSelected}
+              >
+                <Card 
+                  className={`p-3 transition-all duration-200 hover:shadow-md ${
+                    isSelected 
+                      ? 'ring-2 ring-blue-500 bg-blue-50 border-blue-200' 
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id={`staff-${member.id}`}
+                      checked={isSelected}
+                      onCheckedChange={(checked) => handleStaffToggle(member.id, checked as boolean)}
+                    />
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={member.profileImage} />
+                      <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="font-medium text-sm">{member.name}</div>
+                      <div className="text-xs text-gray-500">{member.designation}</div>
+                      <div className="text-xs text-gray-400">{member.phone}</div>
+                    </div>
+                  </div>
+                </Card>
+              </label>
+            );
+          })}
         </div>
       ) : (
         <div className="text-sm text-gray-500 p-4 border rounded-md">

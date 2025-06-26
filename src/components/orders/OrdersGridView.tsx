@@ -100,14 +100,18 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Responsive Grid: 1 col mobile, 2 cols tablet, 3 cols desktop */}
+      <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         {filteredOrders.map(order => {
           const madeForItems = getMadeForItems(order);
           return (
-            <Card key={order.id} className="hover:shadow-lg transition-all duration-200 border border-gray-200 rounded-xl shadow-sm">
+            <Card 
+              key={order.id} 
+              className="hover:shadow-lg transition-all duration-200 border border-gray-200 rounded-xl shadow-sm"
+            >
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start">
-                  <div className="space-y-1 flex-1">
+                  <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center space-x-2">
                       <span className="font-bold text-lg">#{order.orderNumber.slice(-4)}</span>
                       <Badge className={getStatusColor(order.status)} variant="outline">
@@ -116,7 +120,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                     </div>
                     <div className="text-xl font-semibold text-gray-900 truncate">{order.customerName}</div>
                   </div>
-                  <div className="text-right text-sm text-gray-500 ml-2">
+                  <div className="text-right text-sm text-gray-500 ml-2 flex-shrink-0">
                     <div className="flex items-center">
                       <Calendar className="h-3 w-3 mr-1" />
                       <span className="text-xs">{order.orderDate}</span>
@@ -130,9 +134,9 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                 <div className="space-y-2">
                   <div className="flex items-center text-sm text-gray-600">
                     <Package className="h-4 w-4 mr-2 flex-shrink-0" />
-                    <span className="truncate">{order.itemType}</span>
+                    <span className="truncate flex-1">{order.itemType}</span>
                     {order.quantity > 1 && (
-                      <Badge variant="outline" className="ml-2 text-xs">
+                      <Badge variant="outline" className="text-xs ml-2 flex-shrink-0">
                         Qty: {order.quantity}
                       </Badge>
                     )}
@@ -173,79 +177,81 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                   )}
                 </div>
 
-                {/* Action Buttons - Responsive Grid */}
-                <div className="grid grid-cols-3 gap-2 pt-2">
-                  {/* First Row */}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleViewOrder(order)}
-                    className="text-xs"
-                    title="View Order"
-                  >
-                    <Eye className="h-3 w-3 mr-1" />
-                    View
-                  </Button>
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleEditOrder(order)}
-                    className="text-xs"
-                    title="Edit Order"
-                  >
-                    <Edit className="h-3 w-3 mr-1" />
-                    Edit
-                  </Button>
-                  
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleDeleteClick(order)}
-                    className="text-red-600 hover:bg-red-50 text-xs"
-                    title="Delete Order"
-                  >
-                    <Trash2 className="h-3 w-3 mr-1" />
-                    Delete
-                  </Button>
-                </div>
-
-                {/* Second Row */}
-                <div className="grid grid-cols-3 gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleSendWhatsApp(order)}
-                    className="text-green-600 hover:bg-green-50 text-xs"
-                    title="Send WhatsApp"
-                  >
-                    <MessageSquare className="h-3 w-3 mr-1" />
-                    WhatsApp
-                  </Button>
-
-                  {handleBillOrder && (
+                {/* Action Buttons - Mobile-optimized layout */}
+                <div className="pt-2 space-y-2">
+                  {/* First Row - Primary Actions */}
+                  <div className="grid grid-cols-3 gap-2">
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleBillOrder(order)}
-                      className="text-purple-600 hover:bg-purple-50 text-xs"
-                      title="Generate Bill"
+                      onClick={() => handleViewOrder(order)}
+                      className="text-xs flex items-center justify-center"
+                      title="View Order"
                     >
-                      <Receipt className="h-3 w-3 mr-1" />
-                      Bill
+                      <Eye className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">View</span>
                     </Button>
-                  )}
+                    
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEditOrder(order)}
+                      className="text-xs flex items-center justify-center"
+                      title="Edit Order"
+                    >
+                      <Edit className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">Edit</span>
+                    </Button>
+                    
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleDeleteClick(order)}
+                      className="text-red-600 hover:bg-red-50 text-xs flex items-center justify-center"
+                      title="Delete Order"
+                    >
+                      <Trash2 className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">Delete</span>
+                    </Button>
+                  </div>
 
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="md:hidden text-xs"
-                    onClick={() => window.open(`tel:${order.customerPhone}`)}
-                    title="Call Customer"
-                  >
-                    <Phone className="h-3 w-3 mr-1" />
-                    Call
-                  </Button>
+                  {/* Second Row - Communication Actions */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleSendWhatsApp(order)}
+                      className="text-green-600 hover:bg-green-50 text-xs flex items-center justify-center"
+                      title="Send WhatsApp"
+                    >
+                      <MessageSquare className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">WhatsApp</span>
+                    </Button>
+
+                    {handleBillOrder && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleBillOrder(order)}
+                        className="text-purple-600 hover:bg-purple-50 text-xs flex items-center justify-center"
+                        title="Generate Bill"
+                      >
+                        <Receipt className="h-3 w-3 sm:mr-1" />
+                        <span className="hidden sm:inline">Bill</span>
+                      </Button>
+                    )}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="md:hidden text-xs flex items-center justify-center"
+                      onClick={() => window.open(`tel:${order.customerPhone}`)}
+                      title="Call Customer"
+                    >
+                      <Phone className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">Call</span>
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

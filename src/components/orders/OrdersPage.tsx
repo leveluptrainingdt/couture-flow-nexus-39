@@ -63,10 +63,13 @@ const OrdersPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<{ from?: Date; to?: Date }>({});
+  
+  // Persistent view preferences with localStorage
   const [view, setView] = useState<'grid' | 'list' | 'calendar'>(() => {
     const saved = localStorage.getItem('orders-view');
     return (saved as 'grid' | 'list' | 'calendar') || 'grid';
   });
+  
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
@@ -76,7 +79,7 @@ const OrdersPage = () => {
   const [calendarOrders, setCalendarOrders] = useState<Order[]>([]);
   const [calendarViewMode, setCalendarViewMode] = useState<'grid' | 'list'>('grid');
 
-  // Save view preference to localStorage
+  // Save view preference to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('orders-view', view);
   }, [view]);
@@ -222,420 +225,199 @@ const OrdersPage = () => {
           customerEmail: order.customerEmail || '',
           orderId: order.id,
           orderNumber: order.orderNumber,
-          items: order.items?.map(item => ({
-            id: `item-${Date.now()}-${Math.random()}`,
-            description: `${item.category} - ${item.description || 'Custom Order'}`,
-            quantity: item.quantity,
-            rate: item.totalAmount,
-            amount: item.totalAmount * item.quantity,
-            chargeType: 'item'
-          })) || [{
-            id: `item-${Date.now()}`,
-            description: `${order.itemType} - Custom Order`,
+          items: order.items || [{
+            description: order.itemType,
             quantity: order.quantity,
-            rate: order.totalAmount,
-            amount: order.totalAmount,
-            chargeType: 'item'
+            rate: order.totalAmount / order.quantity,
+            amount: order.totalAmount
           }],
-          breakdown: {
-            fabric: 0,
-            stitching: 0,
-            accessories: 0,
-            customization: 0,
-            otherCharges: 0
-          },
-          subtotal: order.totalAmount,
-          gstPercent: 0,
-          gstAmount: 0,
-          discount: 0,
-          discountType: 'amount',
           totalAmount: order.totalAmount,
-          paidAmount: order.advanceAmount || 0,
-          balance: order.remainingAmount || 0,
-          status: order.remainingAmount > 0 ? 'partial' : order.advanceAmount > 0 ? 'paid' : 'unpaid',
-          date: serverTimestamp(),
-          bankDetails: {
-            accountName: 'Swetha\'s Couture',
-            accountNumber: '',
-            ifsc: '',
-            bankName: ''
-          },
-          upiId: '',
-          upiLink: '',
-          qrCodeUrl: '',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          paidAmount: order.advanceAmount,
+          balance: order.remainingAmount,
+          date: new Date(),
+          createdAt: serverTimestamp()
         };
-
+        
         const docRef = await addDoc(collection(db, 'bills'), billData);
+        
+        toast({
+          title: "Success",
+          description: "Bill created successfully",
+        });
+        
+        // Navigate to new bill
         window.location.href = `/billing/${docRef.id}`;
       }
     } catch (error) {
-      console.error('Error handling bill:', error);
+      console.error('Error creating bill:', error);
       toast({
         title: "Error",
-        description: "Failed to create/open bill",
+        description: "Failed to create bill",
         variant: "destructive",
       });
     }
   };
 
-  // Enhanced stats with new categories
-  const today = new Date();
-  const fiveDaysFromNow = new Date();
-  fiveDaysFromNow.setDate(today.getDate() + 5);
-
-  const stats = {
-    total: safeOrders.length,
-    revenue: safeOrders.filter(o => o?.status === 'delivered').reduce((sum, o) => sum + (o?.totalAmount || 0), 0),
-    pending: safeOrders.filter(o => o?.status === 'received').length,
-    inProgress: safeOrders.filter(o => o?.status === 'in-progress').length,
-    ready: safeOrders.filter(o => o?.status === 'ready').length,
-    deliveryDeadline: safeOrders.filter(o => {
-      if (!o?.deliveryDate) return false;
-      const deliveryDate = new Date(o.deliveryDate);
-      return deliveryDate >= today && deliveryDate <= fiveDaysFromNow && o.status !== 'delivered';
-    }).length
-  };
-
   const handleViewOrder = (order: Order) => {
-    if (!order) return;
     setSelectedOrder(order);
     setIsDetailsModalOpen(true);
   };
 
   const handleEditOrder = (order: Order) => {
-    if (!order) return;
     setEditingOrder(order);
     setIsCreateModalOpen(true);
   };
 
   const handleSendWhatsApp = (order: Order) => {
-    if (!order) return;
     setSelectedOrder(order);
     setIsWhatsAppModalOpen(true);
   };
 
-  const handleDateSelect = (date: Date, dayOrders: Order[]) => {
-    setSelectedDate(date);
-    setCalendarOrders(dayOrders);
-  };
-
-  const refreshOrders = () => {
+  const handleRefresh = () => {
+    // Orders are already real-time, this is just for UI feedback
     toast({
-      title: "Success",
-      description: "Orders refreshed successfully",
+      title: "Refreshed",
+      description: "Orders data is up to date",
     });
   };
 
-  const closeCreateModal = () => {
-    setIsCreateModalOpen(false);
-    setEditingOrder(null);
-  };
-
-  if (!loading && safeOrders.length === 0) {
-    return (
-      <div className="space-y-6 p-4 md:p-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Orders</h1>
-            <p className="text-gray-600">Manage customer orders and track progress</p>
-          </div>
-          <Button 
-            className="bg-gradient-to-r from-blue-600 to-purple-600 w-full sm:w-auto"
-            onClick={() => setIsCreateModalOpen(true)}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Order
-          </Button>
-        </div>
-
-        <Card className="text-center py-12">
-          <CardContent>
-            <Package className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No orders yet</h3>
-            <p className="text-gray-600 mb-6">Start by creating your first customer order</p>
-            <Button 
-              className="bg-gradient-to-r from-blue-600 to-purple-600"
-              onClick={() => setIsCreateModalOpen(true)}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Create First Order
-            </Button>
-          </CardContent>
-        </Card>
-        
-        <CreateOrderModal
-          isOpen={isCreateModalOpen}
-          onClose={closeCreateModal}
-          onSuccess={refreshOrders}
-          editingOrder={editingOrder}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6 p-4 md:p-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center space-y-4 lg:space-y-0">
-        <div className="flex items-center space-x-4">
-          {selectedDate && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedDate(null)}
-              className="flex items-center"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-          )}
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Orders</h1>
-            <p className="text-gray-600">
-              {selectedDate 
-                ? `Orders for ${selectedDate.toLocaleDateString()}` 
-                : 'Manage customer orders and track progress'
-              }
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-3 sm:space-y-0 sm:space-x-3 w-full lg:w-auto">
-          {!selectedDate && (
-            <>
-              {/* View Toggle */}
-              <div className="flex rounded-lg border bg-white">
-                <Button
-                  variant={view === 'grid' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setView('grid')}
-                  className="rounded-r-none flex-1 sm:flex-none"
-                  title="Grid View"
-                >
-                  <Grid className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={view === 'list' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setView('list')}
-                  className="rounded-none flex-1 sm:flex-none"
-                  title="List View"
-                >
-                  <List className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant={view === 'calendar' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setView('calendar')}
-                  className="rounded-l-none flex-1 sm:flex-none"
-                  title="Calendar View"
-                >
-                  <CalendarIcon className="h-4 w-4" />
-                </Button>
-              </div>
-            </>
-          )}
-          
-          {selectedDate && (
-            <div className="flex rounded-lg border bg-white">
-              <Button
-                variant={calendarViewMode === 'grid' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setCalendarViewMode('grid')}
-                className="rounded-r-none flex-1 sm:flex-none"
-              >
-                <Grid className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={calendarViewMode === 'list' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setCalendarViewMode('list')}
-                className="rounded-l-none flex-1 sm:flex-none"
-              >
-                <List className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-          
-          <Button 
-            className="bg-gradient-to-r from-blue-600 to-purple-600 w-full sm:w-auto"
-            onClick={() => setIsCreateModalOpen(true)}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Order
-          </Button>
-        </div>
-      </div>
-
-      {/* Enhanced Stats Cards */}
-      {!selectedDate && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <Card className="hover:shadow-lg transition-all cursor-pointer" onClick={() => setStatusFilter('all')}>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Package className="h-5 w-5 text-blue-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Total Orders</p>
-                  <p className="text-2xl font-bold text-blue-600">{stats.total}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="hover:shadow-lg transition-all cursor-pointer" onClick={() => setStatusFilter('received')}>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Clock className="h-5 w-5 text-orange-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Pending</p>
-                  <p className="text-2xl font-bold text-orange-600">{stats.pending}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-all cursor-pointer" onClick={() => setStatusFilter('in-progress')}>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <AlertCircle className="h-5 w-5 text-yellow-600" />
-                <div>
-                  <p className="text-sm text-gray-600">In Progress</p>
-                  <p className="text-2xl font-bold text-yellow-600">{stats.inProgress}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-all cursor-pointer" onClick={() => setStatusFilter('ready')}>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Package className="h-5 w-5 text-green-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Ready Orders</p>
-                  <p className="text-2xl font-bold text-green-600">{stats.ready}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-all cursor-pointer bg-red-50 border-red-200">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Truck className="h-5 w-5 text-red-600" />
-                <div>
-                  <p className="text-sm text-red-600">Delivery Deadline</p>
-                  <p className="text-2xl font-bold text-red-600">{stats.deliveryDeadline}</p>
-                  <p className="text-xs text-red-500">Due in 5 days</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-all">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Package className="h-5 w-5 text-purple-600" />
-                <div>
-                  <p className="text-sm text-gray-600">Revenue</p>
-                  <p className="text-xl font-bold text-purple-600">₹{stats.revenue.toLocaleString()}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {!selectedDate && view !== 'calendar' && (
-        <OrdersFilters
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          statusFilter={statusFilter}
-          setStatusFilter={setStatusFilter}
-          dateFilter={dateFilter}
-          setDateFilter={setDateFilter}
-        />
-      )}
-
-      {/* Main Content */}
-      {selectedDate ? (
-        // Calendar Date View
-        <div>
-          {calendarViewMode === 'grid' ? (
-            <OrdersGridView
-              filteredOrders={calendarOrders}
-              handleViewOrder={handleViewOrder}
-              handleEditOrder={handleEditOrder}
-              handleSendWhatsApp={handleSendWhatsApp}
-              handleBillOrder={handleBillOrder}
-              onRefresh={refreshOrders}
-            />
-          ) : (
-            <OrdersListView
-              filteredOrders={calendarOrders}
-              handleViewOrder={handleViewOrder}
-              handleEditOrder={handleEditOrder}
-              handleSendWhatsApp={handleSendWhatsApp}
-              handleBillOrder={handleBillOrder}
-              onRefresh={refreshOrders}
-            />
-          )}
-        </div>
-      ) : view === 'calendar' ? (
-        <OrdersCalendarView 
+  const renderContent = () => {
+    if (view === 'calendar') {
+      return (
+        <OrdersCalendarView
           orders={filteredOrders}
-          onDateSelect={handleDateSelect}
+          onDateSelect={(date, dayOrders) => {
+            setSelectedDate(date);
+            setCalendarOrders(dayOrders);
+          }}
         />
-      ) : view === 'grid' ? (
+      );
+    }
+
+    if (view === 'grid') {
+      return (
         <OrdersGridView
           filteredOrders={filteredOrders}
           handleViewOrder={handleViewOrder}
           handleEditOrder={handleEditOrder}
           handleSendWhatsApp={handleSendWhatsApp}
           handleBillOrder={handleBillOrder}
-          onRefresh={refreshOrders}
+          onRefresh={handleRefresh}
         />
-      ) : (
-        <OrdersListView
-          filteredOrders={filteredOrders}
-          handleViewOrder={handleViewOrder}
-          handleEditOrder={handleEditOrder}
-          handleSendWhatsApp={handleSendWhatsApp}
-          handleBillOrder={handleBillOrder}
-          onRefresh={refreshOrders}
-        />
-      )}
+      );
+    }
 
-      {/* Enhanced Modals */}
-      {selectedOrder && (
-        <>
-          <OrderDetailsModal
-            order={selectedOrder}
-            isOpen={isDetailsModalOpen}
-            onClose={() => {
-              setIsDetailsModalOpen(false);
-              setSelectedOrder(null);
-            }}
-            onWhatsAppClick={() => handleSendWhatsApp(selectedOrder)}
-            onEditClick={() => handleEditOrder(selectedOrder)}
-            onBillClick={() => handleBillOrder(selectedOrder)}
-            onRefresh={refreshOrders}
-          />
-          <WhatsAppMessageModal
-            order={selectedOrder}
-            isOpen={isWhatsAppModalOpen}
-            onClose={() => {
-              setIsWhatsAppModalOpen(false);
-              setSelectedOrder(null);
-            }}
-          />
-        </>
-      )}
+    return (
+      <OrdersListView
+        filteredOrders={filteredOrders}
+        handleViewOrder={handleViewOrder}
+        handleEditOrder={handleEditOrder}
+        handleSendWhatsApp={handleSendWhatsApp}
+        handleBillOrder={handleBillOrder}
+        onRefresh={handleRefresh}
+      />
+    );
+  };
+
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      {/* Header with view toggle */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Orders</h1>
+          <p className="text-gray-600">Manage customer orders and track progress</p>
+        </div>
+        <div className="flex items-center space-x-3">
+          {/* View Toggle */}
+          <div className="flex rounded-lg border bg-white">
+            <Button
+              variant={view === 'list' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setView('list')}
+              className="rounded-r-none"
+              title="List View"
+            >
+              <List className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={view === 'grid' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setView('grid')}
+              className="rounded-none"
+              title="Grid View"
+            >
+              <Grid className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={view === 'calendar' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setView('calendar')}
+              className="rounded-l-none"
+              title="Calendar View"
+            >
+              <CalendarIcon className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          <Button 
+            className="bg-gradient-to-r from-blue-600 to-purple-600"
+            onClick={() => setIsCreateModalOpen(true)}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Order
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <OrdersStats orders={safeOrders} />
+
+      {/* Filters */}
+      <OrdersFilters
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        statusFilter={statusFilter}
+        onStatusChange={setStatusFilter}
+        dateFilter={dateFilter}
+        onDateFilterChange={setDateFilter}
+        totalOrders={safeOrders.length}
+        filteredCount={filteredOrders.length}
+      />
+
+      {/* Content */}
+      {renderContent()}
+
+      {/* Modals */}
+      <OrderDetailsModal
+        isOpen={isDetailsModalOpen}
+        onClose={() => {
+          setIsDetailsModalOpen(false);
+          setSelectedOrder(null);
+        }}
+        order={selectedOrder}
+      />
+
+      <WhatsAppMessageModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => {
+          setIsWhatsAppModalOpen(false);
+          setSelectedOrder(null);
+        }}
+        customerName={selectedOrder?.customerName || ''}
+        customerPhone={selectedOrder?.customerPhone || ''}
+        orderNumber={selectedOrder?.orderNumber || ''}
+        deliveryDate={selectedOrder?.deliveryDate || ''}
+      />
 
       <CreateOrderModal
         isOpen={isCreateModalOpen}
-        onClose={closeCreateModal}
-        onSuccess={refreshOrders}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setEditingOrder(null);
+        }}
+        onSuccess={() => {
+          handleRefresh();
+        }}
         editingOrder={editingOrder}
       />
     </div>
