@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -201,6 +202,14 @@ const OrdersPage = () => {
     return matchesSearch && matchesStatus;
   });
 
+  // Calculate stats for OrdersStats component
+  const stats = {
+    total: safeOrders.length,
+    revenue: safeOrders.filter(order => order.status === 'delivered').reduce((sum, order) => sum + (order.totalAmount || 0), 0),
+    pending: safeOrders.filter(order => order.status === 'received').length,
+    inProgress: safeOrders.filter(order => order.status === 'in-progress').length
+  };
+
   // New Bill functionality
   const handleBillOrder = async (order: Order) => {
     if (!order) return;
@@ -370,18 +379,16 @@ const OrdersPage = () => {
       </div>
 
       {/* Stats */}
-      <OrdersStats orders={safeOrders} />
+      <OrdersStats stats={stats} />
 
       {/* Filters */}
       <OrdersFilters
         searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
+        setSearchTerm={setSearchTerm}
         statusFilter={statusFilter}
-        onStatusChange={setStatusFilter}
+        setStatusFilter={setStatusFilter}
         dateFilter={dateFilter}
-        onDateFilterChange={setDateFilter}
-        totalOrders={safeOrders.length}
-        filteredCount={filteredOrders.length}
+        setDateFilter={setDateFilter}
       />
 
       {/* Content */}
@@ -395,6 +402,8 @@ const OrdersPage = () => {
           setSelectedOrder(null);
         }}
         order={selectedOrder}
+        onWhatsAppClick={handleSendWhatsApp}
+        onRefresh={handleRefresh}
       />
 
       <WhatsAppMessageModal
@@ -403,10 +412,7 @@ const OrdersPage = () => {
           setIsWhatsAppModalOpen(false);
           setSelectedOrder(null);
         }}
-        customerName={selectedOrder?.customerName || ''}
-        customerPhone={selectedOrder?.customerPhone || ''}
-        orderNumber={selectedOrder?.orderNumber || ''}
-        deliveryDate={selectedOrder?.deliveryDate || ''}
+        order={selectedOrder}
       />
 
       <CreateOrderModal
