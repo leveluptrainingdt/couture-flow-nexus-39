@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Eye, Edit, MessageSquare, Receipt, Phone, User, Calendar, Package, Trash2 } from 'lucide-react';
+import { Eye, Edit, MessageSquare, Phone, User, Calendar, Package, Trash2 } from 'lucide-react';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
@@ -28,7 +28,6 @@ interface OrdersGridViewProps {
   handleViewOrder: (order: Order) => void;
   handleEditOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
-  handleBillOrder?: (order: Order) => void;
   onRefresh: () => void;
 }
 
@@ -37,7 +36,6 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
   handleViewOrder,
   handleEditOrder,
   handleSendWhatsApp,
-  handleBillOrder,
   onRefresh
 }) => {
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; order: Order | null }>({
@@ -98,7 +96,6 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
 
   return (
     <>
-      {/* Responsive Grid: 1 col mobile, 2 cols tablet, 3 cols desktop */}
       <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         {filteredOrders.map(order => {
           const madeForItems = getMadeForItems(order);
@@ -128,7 +125,6 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
               </CardHeader>
               
               <CardContent className="space-y-4">
-                {/* Order Details */}
                 <div className="space-y-2">
                   <div className="flex items-center text-sm text-gray-600">
                     <Package className="h-4 w-4 mr-2 flex-shrink-0" />
@@ -140,7 +136,6 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                     )}
                   </div>
                   
-                  {/* Made For (if different people) */}
                   {madeForItems.length > 1 || (madeForItems[0] !== order.customerName) && (
                     <div className="flex items-start text-sm">
                       <User className="h-4 w-4 mr-2 mt-0.5 text-purple-600 flex-shrink-0" />
@@ -160,9 +155,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                   </div>
                 </div>
 
-                {/* Action Buttons - Mobile-optimized layout */}
                 <div className="pt-2 space-y-2">
-                  {/* First Row - Primary Actions */}
                   <div className="grid grid-cols-3 gap-2">
                     <Button
                       size="sm"
@@ -198,8 +191,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                     </Button>
                   </div>
 
-                  {/* Second Row - Communication Actions */}
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -211,23 +203,10 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                       <span className="hidden sm:inline">WhatsApp</span>
                     </Button>
 
-                    {handleBillOrder && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleBillOrder(order)}
-                        className="text-purple-600 hover:bg-purple-50 hover:border-purple-200 text-xs flex items-center justify-center transition-colors"
-                        title="Generate Bill"
-                      >
-                        <Receipt className="h-3 w-3 sm:mr-1" />
-                        <span className="hidden sm:inline">Bill</span>
-                      </Button>
-                    )}
-
                     <Button
                       size="sm"
                       variant="outline"
-                      className="md:hidden text-xs flex items-center justify-center hover:bg-blue-50 hover:border-blue-200 transition-colors"
+                      className="text-xs flex items-center justify-center hover:bg-blue-50 hover:border-blue-200 transition-colors"
                       onClick={() => window.open(`tel:${order.customerPhone}`)}
                       title="Call Customer"
                     >

@@ -1,10 +1,10 @@
 
 import React, { useState } from 'react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { Eye, Edit, MessageSquare, Receipt, Phone, User, Trash2 } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Eye, Edit, MessageSquare, Phone, Trash2 } from 'lucide-react';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
@@ -29,7 +29,6 @@ interface OrdersListViewProps {
   handleViewOrder: (order: Order) => void;
   handleEditOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
-  handleBillOrder?: (order: Order) => void;
   onRefresh: () => void;
 }
 
@@ -38,7 +37,6 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
   handleViewOrder,
   handleEditOrder,
   handleSendWhatsApp,
-  handleBillOrder,
   onRefresh
 }) => {
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; order: Order | null }>({
@@ -56,11 +54,6 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
       case 'cancelled': return 'bg-red-100 text-red-700 border-red-200';
       default: return 'bg-gray-100 text-gray-700 border-gray-200';
     }
-  };
-
-  const getMadeForItems = (order: Order) => {
-    if (!order.items || order.items.length === 0) return [order.customerName];
-    return [...new Set(order.items.map(item => item.madeFor || order.customerName))];
   };
 
   const handleDeleteClick = (order: Order) => {
@@ -98,178 +91,100 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
   };
 
   return (
-    <TooltipProvider>
-      {/* Horizontal scroll wrapper - ONLY the table scrolls */}
-      <div className="w-full">
-        <div style={{ overflowX: 'auto', width: '100%' }} className="border rounded-lg bg-white shadow-sm">
-          <Table className="min-w-full">
-            <TableHeader>
-              <TableRow className="bg-gray-50">
-                <TableHead className="min-w-[100px] whitespace-nowrap font-semibold">Order ID</TableHead>
-                <TableHead className="min-w-[150px] whitespace-nowrap font-semibold">Customer</TableHead>
-                <TableHead className="min-w-[120px] whitespace-nowrap font-semibold">Made For</TableHead>
-                <TableHead className="min-w-[120px] whitespace-nowrap font-semibold">Item Type</TableHead>
-                <TableHead className="min-w-[100px] whitespace-nowrap font-semibold">Order Date</TableHead>
-                <TableHead className="min-w-[100px] whitespace-nowrap font-semibold">Delivery Date</TableHead>
-                <TableHead className="min-w-[80px] whitespace-nowrap font-semibold">Status</TableHead>
-                <TableHead className="min-w-[280px] whitespace-nowrap font-semibold">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredOrders.map(order => {
-                const madeForItems = getMadeForItems(order);
-                return (
-                  <TableRow key={order.id} className="hover:bg-gray-50 transition-colors">
-                    <TableCell className="font-medium whitespace-nowrap">
-                      <div className="flex items-center">
-                        <span className="text-sm font-bold">#{order.orderNumber.slice(-4)}</span>
+    <>
+      <Card>
+        <CardContent className="p-0">
+          <div style={{ overflowX: 'auto', width: '100%' }}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[100px]">Order #</TableHead>
+                  <TableHead className="min-w-[150px]">Customer</TableHead>
+                  <TableHead className="min-w-[120px]">Item Type</TableHead>
+                  <TableHead className="min-w-[100px]">Status</TableHead>
+                  <TableHead className="min-w-[100px]">Order Date</TableHead>
+                  <TableHead className="min-w-[100px]">Delivery Date</TableHead>
+                  <TableHead className="min-w-[80px]">Quantity</TableHead>
+                  <TableHead className="min-w-[200px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredOrders.map(order => (
+                  <TableRow key={order.id} className="hover:bg-gray-50">
+                    <TableCell className="font-medium">
+                      #{order.orderNumber.slice(-4)}
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{order.customerName}</div>
+                        <div className="text-sm text-gray-500">{order.customerPhone}</div>
                       </div>
                     </TableCell>
-                    <TableCell className="min-w-[150px]">
-                      <div className="max-w-[150px]">
-                        <div className="font-medium truncate text-sm" title={order.customerName}>
-                          {order.customerName}
-                        </div>
-                        <div className="text-xs text-gray-500 truncate" title={order.customerPhone}>
-                          {order.customerPhone}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="min-w-[120px]">
-                      <div className="flex flex-wrap gap-1 max-w-[120px]">
-                        {madeForItems.slice(0, 2).map((person, index) => (
-                          <Badge 
-                            key={index} 
-                            variant="outline" 
-                            className={`${person !== order.customerName ? "text-purple-600 bg-purple-50" : "text-gray-600 bg-gray-50"} text-xs truncate max-w-full`}
-                            title={person}
-                          >
-                            <User className="h-3 w-3 mr-1" />
-                            {person.length > 8 ? `${person.slice(0, 8)}...` : person}
-                          </Badge>
-                        ))}
-                        {madeForItems.length > 2 && (
-                          <Badge variant="outline" className="text-xs bg-gray-50">
-                            +{madeForItems.length - 2}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="min-w-[120px]">
-                      <div className="max-w-[120px]">
-                        <div className="truncate text-sm" title={order.itemType}>
-                          {order.itemType}
-                        </div>
-                        {order.quantity > 1 && (
-                          <Badge variant="outline" className="text-xs mt-1 bg-blue-50 text-blue-600">
-                            Qty: {order.quantity}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">{order.orderDate}</TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">{order.deliveryDate}</TableCell>
+                    <TableCell>{order.itemType}</TableCell>
                     <TableCell>
                       <Badge className={`${getStatusColor(order.status)} font-medium`} variant="outline">
                         {order.status}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-sm">{order.orderDate}</TableCell>
+                    <TableCell className="text-sm">{order.deliveryDate}</TableCell>
+                    <TableCell>{order.quantity}</TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1 min-w-[280px]">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleViewOrder(order)}
-                              className="h-8 w-8 p-0 hover:bg-blue-50 hover:border-blue-200"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>View Order</TooltipContent>
-                        </Tooltip>
-                        
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleEditOrder(order)}
-                              className="h-8 w-8 p-0 hover:bg-green-50 hover:border-green-200"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Edit Order</TooltipContent>
-                        </Tooltip>
-                        
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDeleteClick(order)}
-                              className="text-red-600 hover:bg-red-50 hover:border-red-200 h-8 w-8 p-0"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Delete Order</TooltipContent>
-                        </Tooltip>
-                        
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleSendWhatsApp(order)}
-                              className="text-green-600 hover:bg-green-50 hover:border-green-200 h-8 w-8 p-0"
-                            >
-                              <MessageSquare className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Send WhatsApp</TooltipContent>
-                        </Tooltip>
-                        
-                        {handleBillOrder && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleBillOrder(order)}
-                                className="text-purple-600 hover:bg-purple-50 hover:border-purple-200 h-8 w-8 p-0"
-                              >
-                                <Receipt className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Generate Bill</TooltipContent>
-                          </Tooltip>
-                        )}
-
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="md:hidden h-8 w-8 p-0 hover:bg-blue-50 hover:border-blue-200"
-                              onClick={() => window.open(`tel:${order.customerPhone}`)}
-                            >
-                              <Phone className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Call Customer</TooltipContent>
-                        </Tooltip>
+                      <div className="flex flex-wrap gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewOrder(order)}
+                          className="h-8 px-2 text-xs"
+                          title="View Order"
+                        >
+                          <Eye className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleEditOrder(order)}
+                          className="h-8 px-2 text-xs"
+                          title="Edit Order"
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSendWhatsApp(order)}
+                          className="h-8 px-2 text-xs text-green-600 hover:bg-green-50"
+                          title="Send WhatsApp"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.open(`tel:${order.customerPhone}`)}
+                          className="h-8 px-2 text-xs"
+                          title="Call Customer"
+                        >
+                          <Phone className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDeleteClick(order)}
+                          className="h-8 px-2 text-xs text-red-600 hover:bg-red-50"
+                          title="Delete Order"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       <DeleteConfirmationDialog
         isOpen={deleteDialog.isOpen}
@@ -278,7 +193,7 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
         orderNumber={deleteDialog.order?.orderNumber || ''}
         isDeleting={isDeleting}
       />
-    </TooltipProvider>
+    </>
   );
 };
 

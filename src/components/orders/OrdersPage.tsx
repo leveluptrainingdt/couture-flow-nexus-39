@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Plus, Grid, List, Calendar as CalendarIcon, AlertCircle } from 'lucide-react';
-import { collection, onSnapshot, query, orderBy, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import OrderDetailsModal from '@/components/OrderDetailsModal';
@@ -229,58 +229,6 @@ const OrdersPage = () => {
     }).length
   };
 
-  const handleBillOrder = async (order: Order) => {
-    if (!order || !order.customerName) return;
-    
-    try {
-      const billsSnapshot = await getDocs(collection(db, 'bills'));
-      const existingBill = billsSnapshot.docs.find(doc => 
-        doc.data().orderId === order.id || doc.data().orderNumber === order.orderNumber
-      );
-
-      if (existingBill) {
-        window.location.href = `/billing/${existingBill.id}`;
-      } else {
-        const billData = {
-          billId: `BILL${Date.now().toString().slice(-6)}`,
-          customerId: order.id,
-          customerName: order.customerName,
-          customerPhone: order.customerPhone,
-          customerEmail: order.customerEmail || '',
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          items: order.items || [{
-            description: order.itemType,
-            quantity: order.quantity,
-            rate: 0,
-            amount: 0
-          }],
-          totalAmount: 0,
-          paidAmount: 0,
-          balance: 0,
-          date: new Date(),
-          createdAt: serverTimestamp()
-        };
-        
-        const docRef = await addDoc(collection(db, 'bills'), billData);
-        
-        toast({
-          title: "Success",
-          description: "Bill created successfully",
-        });
-        
-        window.location.href = `/billing/${docRef.id}`;
-      }
-    } catch (error) {
-      console.error('Error creating bill:', error);
-      toast({
-        title: "Error",
-        description: "Failed to create bill",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleViewOrder = (order: Order) => {
     if (!order) return;
     setSelectedOrder(order);
@@ -324,7 +272,6 @@ const OrdersPage = () => {
             handleViewOrder={handleViewOrder}
             handleEditOrder={handleEditOrder}
             handleSendWhatsApp={handleSendWhatsApp}
-            handleBillOrder={handleBillOrder}
             onRefresh={handleRefresh}
           />
         );
@@ -336,7 +283,6 @@ const OrdersPage = () => {
           handleViewOrder={handleViewOrder}
           handleEditOrder={handleEditOrder}
           handleSendWhatsApp={handleSendWhatsApp}
-          handleBillOrder={handleBillOrder}
           onRefresh={handleRefresh}
         />
       );

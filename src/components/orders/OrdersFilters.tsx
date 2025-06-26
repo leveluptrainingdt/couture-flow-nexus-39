@@ -33,13 +33,12 @@ const OrdersFilters: React.FC<OrdersFiltersProps> = ({
     setIsDatePickerOpen(false);
   };
 
-  const handleDateSelect = (date: Date | { from?: Date; to?: Date } | undefined) => {
-    if (dateMode === 'single') {
-      setDateFilter({ single: date as Date });
-    } else {
-      const range = date as { from?: Date; to?: Date };
-      setDateFilter({ from: range?.from, to: range?.to });
-    }
+  const handleSingleDateSelect = (date: Date | undefined) => {
+    setDateFilter({ single: date });
+  };
+
+  const handleRangeDateSelect = (range: { from?: Date; to?: Date } | undefined) => {
+    setDateFilter({ from: range?.from, to: range?.to });
   };
 
   const getDateDisplayText = () => {
@@ -126,16 +125,22 @@ const OrdersFilters: React.FC<OrdersFiltersProps> = ({
                   </Button>
                 </div>
               </div>
-              <p className="text-xs text-gray-600">
-                Filter by Order Date or Delivery Date
-              </p>
             </div>
-            <Calendar
-              mode={dateMode === 'single' ? 'single' : 'range'}
-              selected={dateMode === 'single' ? dateFilter.single : { from: dateFilter.from, to: dateFilter.to }}
-              onSelect={handleDateSelect}
-              numberOfMonths={dateMode === 'range' ? 2 : 1}
-            />
+            {dateMode === 'single' ? (
+              <Calendar
+                mode="single"
+                selected={dateFilter.single}
+                onSelect={handleSingleDateSelect}
+                numberOfMonths={1}
+              />
+            ) : (
+              <Calendar
+                mode="range"
+                selected={{ from: dateFilter.from, to: dateFilter.to }}
+                onSelect={handleRangeDateSelect}
+                numberOfMonths={2}
+              />
+            )}
             <div className="p-3 border-t">
               <div className="flex gap-2">
                 <Button
