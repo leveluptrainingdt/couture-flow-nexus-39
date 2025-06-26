@@ -290,15 +290,25 @@ const OrdersPage = () => {
     });
   };
 
+  const handleDateSelect = (date: Date, dayOrders: Order[]) => {
+    setSelectedDate(date);
+    // Ensure dayOrders match our Order interface
+    const typedOrders: Order[] = dayOrders.map(order => ({
+      ...order,
+      customerPhone: order.customerPhone || '',
+      advanceAmount: order.advanceAmount || 0,
+      remainingAmount: order.remainingAmount || 0,
+      quantity: order.quantity || 1
+    }));
+    setCalendarOrders(typedOrders);
+  };
+
   const renderContent = () => {
     if (view === 'calendar') {
       return (
         <OrdersCalendarView
           orders={filteredOrders}
-          onDateSelect={(date, dayOrders) => {
-            setSelectedDate(date);
-            setCalendarOrders(dayOrders);
-          }}
+          onDateSelect={handleDateSelect}
         />
       );
     }
