@@ -49,6 +49,14 @@ interface OrderFormData {
   customerName: string;
   customerPhone: string;
   customerEmail: string;
+  itemType: string;
+  quantity: number;
+  status: string;
+  orderDate: string;
+  deliveryDate: string;
+  totalAmount: number;
+  advanceAmount: number;
+  notes: string;
 }
 
 const CreateOrderModal: React.FC<CreateOrderModalProps> = ({ isOpen, onClose, onSuccess, editingOrder }) => {
