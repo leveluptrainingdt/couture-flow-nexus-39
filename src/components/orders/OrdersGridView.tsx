@@ -8,20 +8,7 @@ import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import DeleteConfirmationDialog from '@/components/DeleteConfirmationDialog';
-
-interface Order {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerPhone: string;
-  customerEmail?: string;
-  itemType: string;
-  orderDate: string;
-  deliveryDate: string;
-  status: string;
-  quantity: number;
-  items?: any[];
-}
+import { Order } from './OrdersPage';
 
 interface OrdersGridViewProps {
   filteredOrders: Order[];

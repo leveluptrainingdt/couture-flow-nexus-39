@@ -31,7 +31,7 @@ interface OrderItem {
   sizes?: Record<string, string>;
 }
 
-interface Order {
+export interface Order {
   id: string;
   orderNumber: string;
   customerName: string;
@@ -108,7 +108,7 @@ const OrdersPage = () => {
                 orderDate: data.orderDate || data.createdAt?.toDate?.()?.toLocaleDateString() || new Date().toLocaleDateString(),
                 deliveryDate: data.deliveryDate || '',
                 quantity: data.items?.length || data.quantity || 1,
-                status: data.status || 'received',
+                status: (data.status || 'received') as 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled',
                 measurements: data.measurements || {},
                 notes: data.notes || '',
                 designImages: data.designImages || [],
