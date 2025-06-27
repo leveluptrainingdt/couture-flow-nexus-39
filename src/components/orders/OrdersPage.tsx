@@ -51,6 +51,13 @@ export interface Order {
   requiredMaterials?: any[];
 }
 
+// Extended interface for calendar component that needs billing properties
+interface CalendarOrder extends Order {
+  totalAmount: number;
+  advanceAmount: number;
+  remainingAmount: number;
+}
+
 const OrdersPage = () => {
   const { userData } = useAuth();
   const navigate = useNavigate();
@@ -274,7 +281,8 @@ const OrdersPage = () => {
   const renderContent = () => {
     try {
       if (view === 'calendar') {
-        const calendarOrders = filteredOrders.map(order => ({
+        // Convert Order to CalendarOrder by adding required billing properties
+        const calendarOrders: CalendarOrder[] = filteredOrders.map(order => ({
           ...order,
           totalAmount: 0,
           advanceAmount: 0,
