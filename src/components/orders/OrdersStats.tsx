@@ -11,9 +11,10 @@ interface OrdersStatsProps {
     ready: number;
     deliveryDeadline: number;
   };
+  onStatusFilter: (status: string) => void;
 }
 
-const OrdersStats: React.FC<OrdersStatsProps> = ({ stats }) => {
+const OrdersStats: React.FC<OrdersStatsProps> = ({ stats, onStatusFilter }) => {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
       <Card className="border-0 shadow-md hover:shadow-lg transition-shadow">
@@ -27,7 +28,7 @@ const OrdersStats: React.FC<OrdersStatsProps> = ({ stats }) => {
         </CardContent>
       </Card>
       
-      <Card className="border-0 shadow-md hover:shadow-lg transition-shadow">
+      <Card className="border-0 shadow-md hover:shadow-lg transition-shadow cursor-pointer hover:bg-orange-50" onClick={() => onStatusFilter('received')}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Pending Orders</CardTitle>
           <Clock className="h-4 w-4 text-orange-600" />
@@ -38,7 +39,7 @@ const OrdersStats: React.FC<OrdersStatsProps> = ({ stats }) => {
         </CardContent>
       </Card>
       
-      <Card className="border-0 shadow-md hover:shadow-lg transition-shadow">
+      <Card className="border-0 shadow-md hover:shadow-lg transition-shadow cursor-pointer hover:bg-blue-50" onClick={() => onStatusFilter('in-progress')}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">In Progress</CardTitle>
           <AlertCircle className="h-4 w-4 text-blue-600" />
@@ -49,7 +50,7 @@ const OrdersStats: React.FC<OrdersStatsProps> = ({ stats }) => {
         </CardContent>
       </Card>
       
-      <Card className="border-0 shadow-md hover:shadow-lg transition-shadow">
+      <Card className="border-0 shadow-md hover:shadow-lg transition-shadow cursor-pointer hover:bg-green-50" onClick={() => onStatusFilter('ready')}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Ready Orders</CardTitle>
           <CheckCircle className="h-4 w-4 text-green-600" />
@@ -60,7 +61,7 @@ const OrdersStats: React.FC<OrdersStatsProps> = ({ stats }) => {
         </CardContent>
       </Card>
       
-      <Card className="border-0 shadow-md hover:shadow-lg transition-shadow">
+      <Card className="border-0 shadow-md hover:shadow-lg transition-shadow cursor-pointer hover:bg-red-50" onClick={() => onStatusFilter('delivery-deadline')}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Delivery Deadline</CardTitle>
           <Calendar className="h-4 w-4 text-red-600" />

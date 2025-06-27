@@ -1,9 +1,8 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Eye, Edit, MessageSquare, Phone, User, Calendar, Package, Trash2 } from 'lucide-react';
+import { Eye, Edit, MessageSquare, Phone, User, Calendar, Package, Trash2, Receipt } from 'lucide-react';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
@@ -16,6 +15,7 @@ interface OrdersGridViewProps {
   handleEditOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
   onRefresh: () => void;
+  onBillClick: (order: Order) => void;
 }
 
 const OrdersGridView: React.FC<OrdersGridViewProps> = ({
@@ -23,7 +23,8 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
   handleViewOrder,
   handleEditOrder,
   handleSendWhatsApp,
-  onRefresh
+  onRefresh,
+  onBillClick
 }) => {
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; order: Order | null }>({
     isOpen: false,
@@ -143,7 +144,7 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                 </div>
 
                 <div className="pt-2 space-y-2">
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -164,6 +165,17 @@ const OrdersGridView: React.FC<OrdersGridViewProps> = ({
                     >
                       <Edit className="h-3 w-3 sm:mr-1" />
                       <span className="hidden sm:inline">Edit</span>
+                    </Button>
+                    
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onBillClick(order)}
+                      className="text-green-600 hover:bg-green-50 hover:border-green-200 text-xs flex items-center justify-center transition-colors"
+                      title="Create Bill"
+                    >
+                      <Receipt className="h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">Bill</span>
                     </Button>
                     
                     <Button

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Eye, Edit, MessageSquare, Phone, Calendar, Package, User, Trash2 } from 'lucide-react';
+import { Eye, Edit, MessageSquare, Phone, Calendar, Package, User, Trash2, Receipt } from 'lucide-react';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
@@ -16,6 +16,7 @@ interface OrdersListViewProps {
   handleEditOrder: (order: Order) => void;
   handleSendWhatsApp: (order: Order) => void;
   onRefresh: () => void;
+  onBillClick: (order: Order) => void;
 }
 
 const OrdersListView: React.FC<OrdersListViewProps> = ({
@@ -23,7 +24,8 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
   handleViewOrder,
   handleEditOrder,
   handleSendWhatsApp,
-  onRefresh
+  onRefresh,
+  onBillClick
 }) => {
   const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean; order: Order | null }>({
     isOpen: false,
@@ -89,7 +91,7 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
         </CardHeader>
         <CardContent className="p-0">
           <div style={{ overflowX: 'auto', width: '100%' }}>
-            <table className="w-full min-w-[800px]">
+            <table className="w-full min-w-[900px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order</th>
@@ -153,7 +155,7 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                         </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-2">
+                        <div className="flex space-x-1">
                           <Button
                             size="sm"
                             variant="outline"
@@ -171,6 +173,15 @@ const OrdersListView: React.FC<OrdersListViewProps> = ({
                             title="Edit Order"
                           >
                             <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onBillClick(order)}
+                            className="text-green-600 text-xs"
+                            title="Create Bill"
+                          >
+                            <Receipt className="h-3 w-3" />
                           </Button>
                           <Button
                             size="sm"

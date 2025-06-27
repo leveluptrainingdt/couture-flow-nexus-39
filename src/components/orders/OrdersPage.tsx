@@ -6,6 +6,7 @@ import { Plus, Grid, List, Calendar as CalendarIcon, AlertCircle } from 'lucide-
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 import OrderDetailsModal from '@/components/OrderDetailsModal';
 import WhatsAppMessageModal from '@/components/WhatsAppMessageModal';
 import CreateOrderModal from '@/components/CreateOrderModal';
@@ -52,6 +53,7 @@ export interface Order {
 
 const OrdersPage = () => {
   const { userData } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -166,7 +168,6 @@ const OrdersPage = () => {
 
   const safeOrders = Array.isArray(orders) ? orders.filter(order => order && order.customerName) : [];
   
-  // Enhanced date filtering with single date and range support
   const dateFilteredOrders = safeOrders.filter(order => {
     if (!order) return false;
     if (!dateFilter.from && !dateFilter.to && !dateFilter.single) return true;
@@ -207,7 +208,15 @@ const OrdersPage = () => {
       )
     );
     
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+    let matchesStatus = true;
+    if (statusFilter === 'delivery-deadline') {
+      const today = new Date();
+      const fiveDaysFromNow = new Date(today.getTime() + (5 * 24 * 60 * 60 * 1000));
+      const deliveryDate = new Date(order.deliveryDate);
+      matchesStatus = deliveryDate <= fiveDaysFromNow && deliveryDate >= today;
+    } else {
+      matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+    }
     
     return matchesSearch && matchesStatus;
   });
@@ -246,6 +255,15 @@ const OrdersPage = () => {
     setIsWhatsAppModalOpen(true);
   };
 
+  const handleBillClick = (order: Order) => {
+    if (!order) return;
+    navigate(`/billing/${order.id}`);
+  };
+
+  const handleStatusFilter = (status: string) => {
+    setStatusFilter(status);
+  };
+
   const handleRefresh = () => {
     toast({
       title: "Refreshed",
@@ -256,7 +274,6 @@ const OrdersPage = () => {
   const renderContent = () => {
     try {
       if (view === 'calendar') {
-        // Transform orders to include payment properties for OrderCalendar compatibility
         const calendarOrders = filteredOrders.map(order => ({
           ...order,
           totalAmount: 0,
@@ -282,6 +299,7 @@ const OrdersPage = () => {
             handleEditOrder={handleEditOrder}
             handleSendWhatsApp={handleSendWhatsApp}
             onRefresh={handleRefresh}
+            onBillClick={handleBillClick}
           />
         );
       }
@@ -293,6 +311,7 @@ const OrdersPage = () => {
           handleEditOrder={handleEditOrder}
           handleSendWhatsApp={handleSendWhatsApp}
           onRefresh={handleRefresh}
+          onBillClick={handleBillClick}
         />
       );
     } catch (error) {
@@ -358,7 +377,7 @@ const OrdersPage = () => {
       </div>
 
       {/* Enhanced Stats */}
-      <OrdersStats stats={stats} />
+      <OrdersStats stats={stats} onStatusFilter={handleStatusFilter} />
 
       {/* Enhanced Filters */}
       <OrdersFilters
@@ -383,6 +402,8 @@ const OrdersPage = () => {
           }}
           order={selectedOrder}
           onWhatsAppClick={handleSendWhatsApp}
+          onEditClick={handleEditOrder}
+          onBillClick={handleBillClick}
           onRefresh={handleRefresh}
         />
       )}
