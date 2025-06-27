@@ -3,12 +3,45 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Eye, Edit, MessageSquare, Phone, Calendar, Package, User, Trash2, Receipt } from 'lucide-react';
+import { Eye, Edit, MessageSquare, Phone, User, Calendar, Package, Trash2, Receipt } from 'lucide-react';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from '@/hooks/use-toast';
 import DeleteConfirmationDialog from '@/components/DeleteConfirmationDialog';
-import { Order } from './OrdersPage';
+
+interface OrderItem {
+  madeFor: string;
+  category: string;
+  description: string;
+  quantity: number;
+  status: string;
+  orderDate: string;
+  deliveryDate: string;
+  assignedStaff: string[];
+  requiredMaterials: any[];
+  designImages: string[];
+  notes: string;
+  sizes?: Record<string, string>;
+}
+
+interface Order {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  items?: OrderItem[];
+  itemType: string;
+  orderDate: string;
+  deliveryDate: string;
+  quantity: number;
+  status: 'received' | 'in-progress' | 'ready' | 'delivered' | 'cancelled';
+  measurements?: Record<string, string>;
+  notes?: string;
+  designImages?: string[];
+  assignedStaff?: string[];
+  requiredMaterials?: any[];
+}
 
 interface OrdersListViewProps {
   filteredOrders: Order[];
